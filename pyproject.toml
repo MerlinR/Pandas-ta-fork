@@ -1,0 +1,37 @@
+[project]
+name = "pandas-ta"
+version = "0.3.14b"
+description = "An easy to use Python 3 Pandas Extension with 130+ Technical Analysis Indicators. Can be called from a Pandas DataFrame or standalone like TA-Lib. Correlation tested with TA-Lib. NOTE: This is a fork of the original Pandas-ta by Kevin Johnson https://github.com/twopirllc/pandas-ta/"
+
+keywords = ["technical analysis", "trading", "python3", "pandas"]
+license = { file = "LICENSE" }
+
+authors = [{ name = "Kevin Johnson", email = "appliedmathkj@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy==1.26.4", "pandas", "setuptools<=80"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+[tool.poetry]
+packages = [{ include = "pandas_ta" }]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
