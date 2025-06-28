@@ -1,76 +1,77 @@
 # -*- coding: utf-8 -*-
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.maps import Imports
+from pandas_ta.utils import v_offset, v_pos_default, v_series, v_talib
 from .sma import sma
-from pandas_ta import Imports
-from pandas_ta.utils import get_offset, verify_series
 
 
-def trima(close, length=None, talib=None, offset=None, **kwargs):
-    """Indicator: Triangular Moving Average (TRIMA)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 10
-    close = verify_series(close, length)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    if close is None: return
+def trima(
+    close: Series, length: Int = None, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Triangular Moving Average
 
-    # Calculate Result
+    This indicator is a weighted moving average where the shape of the
+    weights are triangular with the greatest weight is in the middle
+    of the period.
+
+    Sources:
+        * [tradingtechnologies](https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/triangular-moving-average-trima/)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```10```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        adjust (bool): Default: True
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+
+    Note:
+        tma = sma(sma(src, ceil(length / 2)), floor(length / 2) + 1)  # Tradingview
+        trima = sma(sma(x, n), n)  # Tradingview
+
+    Warning:
+        TA-Lib Correlation: ```np.float64(0.9991752493891967)```
+
+    Tip:
+        Corrective contributions welcome!
+    """
+    # Validate
+    length = v_pos_default(length, 10)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import TRIMA
         trima = TRIMA(close, length)
     else:
         half_length = round(0.5 * (length + 1))
-        sma1 = sma(close, length=half_length)
-        trima = sma(sma1, length=half_length)
+        sma1 = sma(close, length=half_length, talib=mode_tal)
+        trima = sma(sma1, length=half_length, talib=mode_tal)
 
     # Offset
     if offset != 0:
         trima = trima.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         trima.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        trima.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
+    # Name and Category
     trima.name = f"TRIMA_{length}"
     trima.category = "overlap"
 
     return trima
-
-
-trima.__doc__ = \
-"""Triangular Moving Average (TRIMA)
-
-A weighted moving average where the shape of the weights are triangular and the
-greatest weight is in the middle of the period.
-
-Sources:
-    https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/triangular-moving-average-trima/
-    tma = sma(sma(src, ceil(length / 2)), floor(length / 2) + 1)  # Tradingview
-    trima = sma(sma(x, n), n)  # Tradingview
-
-Calculation:
-    Default Inputs:
-        length=10
-    SMA = Simple Moving Average
-    half_length = round(0.5 * (length + 1))
-    SMA1 = SMA(close, half_length)
-    TRIMA = SMA(SMA1, half_length)
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 10
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    adjust (bool): Default: True
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

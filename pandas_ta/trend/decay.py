@@ -1,75 +1,95 @@
 # -*- coding: utf-8 -*-
-from numpy import exp as npExp
-from pandas import DataFrame
-from pandas_ta.utils import get_offset, verify_series
+from numpy import float64, zeros_like
+from numba import njit
+from pandas import Series
+from pandas_ta._typing import Array, DictLike, Int
+from pandas_ta.utils import v_offset, v_pos_default, v_series, v_str
 
 
-def decay(close, kind=None, length=None, mode=None, offset=None, **kwargs):
-    """Indicator: Decay"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 5
-    mode = mode.lower() if isinstance(mode, str) else "linear"
-    close = verify_series(close, length)
-    offset = get_offset(offset)
 
-    if close is None: return
+# Exponential Decay - https://tulipindicators.org/edecay
+@njit(cache=True)
+def nb_exponential_decay(x, n):
+    m, rate = x.size, 1.0 - (1.0 / n)
 
-    # Calculate Result
-    _mode = "L"
-    if mode == "exp" or kind == "exponential":
+    result = zeros_like(x, dtype=float64)
+    result[0] = x[0]
+
+    for i in range(1, m):
+        result[i] = max(0, x[i], result[i - 1] * rate)
+
+    return result
+
+
+# Linear Decay - https://tulipindicators.org/decay
+@njit(cache=True)
+def nb_linear_decay(x, n):
+    m, rate = x.size, 1.0 / n
+
+    result = zeros_like(x, dtype=float64)
+    result[0] = x[0]
+
+    for i in range(1, m):
+        result[i] = max(0, x[i], result[i - 1] - rate)
+
+    return result
+
+
+def decay(
+    close: Series, length: Int = None, mode: str = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Decay
+
+    This function creates a decay moving forward from prior signals.
+
+    Sources:
+        * [tulipindicators](https://tulipindicators.org/decay)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```1```
+        mode (str): Either ```"linear"``` or ```"exp"``` (exponetional)
+            Default: ```"linear"```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    length = v_pos_default(length, 1)
+    mode = v_str(mode, "linear")
+    offset = v_offset(offset)
+
+    # Calculate
+    _mode, np_close = "L", close.to_numpy()
+
+    if mode in ["exp", "exponential"]:
         _mode = "EXP"
-        diff = close.shift(1) - npExp(-length)
+        result = nb_exponential_decay(np_close, length)
     else:  # "linear"
-        diff = close.shift(1) - (1 / length)
-    diff[0] = close[0]
-    tdf = DataFrame({"close": close, "diff": diff, "0": 0})
-    ld = tdf.max(axis=1)
+        result = nb_linear_decay(np_close, length)
+
+    result = Series(result, index=close.index)
 
     # Offset
     if offset != 0:
-        ld = ld.shift(offset)
+        result = result.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
-        ld.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        ld.fillna(method=kwargs["fill_method"], inplace=True)
+        result.fillna(kwargs["fillna"], inplace=True)
 
-    # Name and Categorize it
-    ld.name = f"{_mode}DECAY_{length}"
-    ld.category = "trend"
+    # Name and Category
+    result.name = f"{_mode}DECAY_{length}"
+    result.category = "trend"
 
-    return ld
-
-
-decay.__doc__ = \
-"""Decay
-
-Creates a decay moving forward from prior signals like crosses. The default is
-"linear". Exponential is optional as "exponential" or "exp".
-
-Sources:
-    https://tulipindicators.org/decay
-
-Calculation:
-    Default Inputs:
-        length=5, mode=None
-
-    if mode == "exponential" or mode == "exp":
-        max(close, close[-1] - exp(-length), 0)
-    else:
-        max(close, close[-1] - (1 / length), 0)
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 1
-    mode (str): If 'exp' then "exponential" decay. Default: 'linear'
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""
+    return result

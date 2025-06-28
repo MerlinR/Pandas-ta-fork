@@ -1,28 +1,67 @@
 # -*- coding: utf-8 -*-
-from pandas import DataFrame
+from numpy import isnan
+from pandas import DataFrame, Series
+from pandas_ta._typing import DictLike, Int, IntFloat
+from pandas_ta.utils import v_offset, v_pos_default, v_scalar, v_series
 from .tsi import tsi
-from pandas_ta.overlap import ema
-from pandas_ta.utils import get_offset, verify_series
 
 
-def smi(close, fast=None, slow=None, signal=None, scalar=None, offset=None, **kwargs):
-    """Indicator: SMI Ergodic Indicator (SMIIO)"""
-    # Validate arguments
-    fast = int(fast) if fast and fast > 0 else 5
-    slow = int(slow) if slow and slow > 0 else 20
-    signal = int(signal) if signal and signal > 0 else 5
+
+def smi(
+    close: Series, fast: Int = None, slow: Int = None,
+    signal: Int = None, scalar: IntFloat = None,
+    offset: Int = None, **kwargs: DictLike
+) -> DataFrame:
+    """SMI Ergodic Indicator
+
+    This indicator, by William Blau, is the same as the TSI except the SMI
+    includes a signal line. A trend is considered bullish when crossing above
+    zero and bearish when crossing below zero. This implementation includes
+    both the SMI Ergodic Indicator and SMI Ergodic Oscillator.
+
+    Sources:
+        * [motivewave](https://www.motivewave.com/studies/smi_ergodic_indicator.htm)
+        * [tradingview A](https://www.tradingview.com/script/Xh5Q0une-SMI-Ergodic-Oscillator/)
+        * [tradingview B](https://www.tradingview.com/script/cwrgy4fw-SMIIO/)
+
+    Parameters:
+        close (Series): ```close``` Series
+        fast (int): The short period. Default: ```5```
+        slow (int): The long period. Default: ```20```
+        signal (int): Signal period. Default: ```5```
+        scalar (float): Scalar. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (DataFrame): 3 columns
+    """
+    # Validate
+    fast = v_pos_default(fast, 5)
+    slow = v_pos_default(slow, 20)
+    signal = v_pos_default(signal, 5)
     if slow < fast:
         fast, slow = slow, fast
-    scalar = float(scalar) if scalar else 1
-    close = verify_series(close, max(fast, slow, signal))
-    offset = get_offset(offset)
+    _length = slow + signal + 1
+    close = v_series(close, _length)
 
-    if close is None: return
+    if close is None:
+        return
 
-    # Calculate Result
+    scalar = v_scalar(scalar, 1)
+    offset = v_offset(offset)
+
+    # Calculate
     tsi_df = tsi(close, fast=fast, slow=slow, signal=signal, scalar=scalar)
+    if tsi_df is None:
+        return  # Emergency Break
+
     smi = tsi_df.iloc[:, 0]
     signalma = tsi_df.iloc[:, 1]
+    if all(isnan(signalma)):
+        return  # Emergency Break
     osc = smi - signalma
 
     # Offset
@@ -31,71 +70,23 @@ def smi(close, fast=None, slow=None, signal=None, scalar=None, offset=None, **kw
         signalma = signalma.shift(offset)
         osc = osc.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         smi.fillna(kwargs["fillna"], inplace=True)
         signalma.fillna(kwargs["fillna"], inplace=True)
         osc.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        smi.fillna(method=kwargs["fill_method"], inplace=True)
-        signalma.fillna(method=kwargs["fill_method"], inplace=True)
-        osc.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
-    _scalar = f"_{scalar}" if scalar != 1 else ""
-    _props = f"_{fast}_{slow}_{signal}{_scalar}"
+    # Name and Category
+    # _scalar = f"_{scalar}" if scalar != 1 else ""
+    _props = f"_{fast}_{slow}_{signal}_{scalar}"
     smi.name = f"SMI{_props}"
     signalma.name = f"SMIs{_props}"
     osc.name = f"SMIo{_props}"
     smi.category = signalma.category = osc.category = "momentum"
 
-    # Prepare DataFrame to return
     data = {smi.name: smi, signalma.name: signalma, osc.name: osc}
-    df = DataFrame(data)
+    df = DataFrame(data, index=close.index)
     df.name = f"SMI{_props}"
     df.category = smi.category
 
     return df
-
-
-smi.__doc__ = \
-"""SMI Ergodic Indicator (SMI)
-
-The SMI Ergodic Indicator is the same as the True Strength Index (TSI) developed
-by William Blau, except the SMI includes a signal line. The SMI uses double
-moving averages of price minus previous price over 2 time frames. The signal
-line, which is an EMA of the SMI, is plotted to help trigger trading signals.
-The trend is bullish when crossing above zero and bearish when crossing below
-zero. This implementation includes both the SMI Ergodic Indicator and SMI
-Ergodic Oscillator.
-
-Sources:
-    https://www.motivewave.com/studies/smi_ergodic_indicator.htm
-    https://www.tradingview.com/script/Xh5Q0une-SMI-Ergodic-Oscillator/
-    https://www.tradingview.com/script/cwrgy4fw-SMIIO/
-
-Calculation:
-    Default Inputs:
-        fast=5, slow=20, signal=5
-    TSI = True Strength Index
-    EMA = Exponential Moving Average
-
-    ERG = TSI(close, fast, slow)
-    Signal = EMA(ERG, signal)
-    OSC = ERG - Signal
-
-Args:
-    close (pd.Series): Series of 'close's
-    fast (int): The short period. Default: 5
-    slow (int): The long period. Default: 20
-    signal (int): The signal period. Default: 5
-    scalar (float): How much to magnify. Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.DataFrame: smi, signal, oscillator columns.
-"""

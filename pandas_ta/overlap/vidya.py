@@ -1,93 +1,113 @@
 # -*- coding: utf-8 -*-
-from numpy import nan as npNaN
+from numpy import nan
 from pandas import Series
-from pandas_ta.utils import get_drift, get_offset, verify_series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    v_drift,
+    v_offset,
+    v_pos_default,
+    v_series,
+    v_talib
+)
 
 
-def vidya(close, length=None, drift=None, offset=None, **kwargs):
-    """Indicator: Variable Index Dynamic Average (VIDYA)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 14
-    close = verify_series(close, length)
-    drift = get_drift(drift)
-    offset = get_offset(offset)
 
-    if close is None: return
+def vidya(
+    close: Series, length: Int = None,
+    talib: bool = None, drift: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Variable Index Dynamic Average
 
-    def _cmo(source: Series, n:int , d: int):
-        """Chande Momentum Oscillator (CMO) Patch
-        For some reason: from pandas_ta.momentum import cmo causes
-        pandas_ta.momentum.coppock to not be able to import it's
-        wma like from pandas_ta.overlap import wma?
-        Weird Circular TypeError!?!
-        """
-        mom = source.diff(d)
-        positive = mom.copy().clip(lower=0)
-        negative = mom.copy().clip(upper=0).abs()
-        pos_sum = positive.rolling(n).sum()
-        neg_sum = negative.rolling(n).sum()
-        return (pos_sum - neg_sum) / (pos_sum + neg_sum)
+    This indicator, by Tushar Chande, is similar to an EMA but it has a
+    dynamically adjusted lookback period dependent based on CMO.
 
-    # Calculate Result
+    Sources:
+        * [perfecttrendsystem](https://www.perfecttrendsystem.com/blog_mt4_2/en/vidya-indicator-for-mt4)
+        * [tradingview](https://www.tradingview.com/script/hdrf0fXV-Variable-Index-Dynamic-Average-VIDYA/)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```14```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        drift (int): Difference amount. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+
+    Note:
+        Sometimes used as a moving average or a trend identifier.
+    """
+    # Validate
+    length = v_pos_default(length, 14)
+    close = v_series(close, length + 1)
+
+    if close is None:
+        return
+
+    mode_tal = v_talib(talib)
+    drift = v_drift(drift)
+    offset = v_offset(offset)
+
+    # Calculate
     m = close.size
     alpha = 2 / (length + 1)
-    abs_cmo = _cmo(close, length, drift).abs()
-    vidya = Series(0, index=close.index)
+
+    if Imports["talib"] and mode_tal:
+        from talib import CMO
+        cmo_ = 0.01 * CMO(close, length)
+    else:
+        cmo_ = _cmo(close, length, drift)
+    abs_cmo = cmo_.abs().astype(float)
+
+    vidya = Series(0.0, index=close.index)
     for i in range(length, m):
-        vidya.iloc[i] = alpha * abs_cmo.iloc[i] * close.iloc[i] + vidya.iloc[i - 1] * (1 - alpha * abs_cmo.iloc[i])
-    vidya.replace({0: npNaN}, inplace=True)
+        vidya.iloc[i] = alpha * abs_cmo.iloc[i] * close.iloc[i] + \
+            vidya.iloc[i - 1] * (1 - alpha * abs_cmo.iloc[i])
+    vidya.replace({0: nan}, inplace=True)
 
     # Offset
     if offset != 0:
         vidya = vidya.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         vidya.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        vidya.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
+    # Name and Category
     vidya.name = f"VIDYA_{length}"
     vidya.category = "overlap"
 
     return vidya
 
 
-vidya.__doc__ = \
-"""Variable Index Dynamic Average (VIDYA)
+def _cmo(x: Series, length: Int, drift: Int):
+    """Chande Momentum Oscillator Patch
 
-Variable Index Dynamic Average (VIDYA) was developed by Tushar Chande. It is
-similar to an Exponential Moving Average but it has a dynamically adjusted
-lookback period dependent on relative price volatility as measured by Chande
-Momentum Oscillator (CMO). When volatility is high, VIDYA reacts faster to
-price changes. It is often used as moving average or trend identifier.
+    Unguarded CMO Patch
 
-Sources:
-    https://www.tradingview.com/script/hdrf0fXV-Variable-Index-Dynamic-Average-VIDYA/
-    https://www.perfecttrendsystem.com/blog_mt4_2/en/vidya-indicator-for-mt4
+    Parameters:
+        x (Series): ```x``` Series
+        length (int): The period.
+        drift (int): Difference amount.
 
-Calculation:
-    Default Inputs:
-        length=10, adjust=False, sma=True
-    if sma:
-        sma_nth = close[0:length].sum() / length
-        close[:length - 1] = np.NaN
-        close.iloc[length - 1] = sma_nth
-    EMA = close.ewm(span=length, adjust=adjust).mean()
+    Returns:
+        (Series): 1 column
 
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 14
-    offset (int): How many periods to offset the result. Default: 0
+    Info: Weird Circular TypeError!?
+        For some reason: from pandas_ta.momentum import cmo causes
+        pandas_ta.momentum.coppock to not be able to import it's _wma_ like
+        from pandas_ta.overlap import wma?
+    """
+    mom = x.diff(drift)
+    positive = mom.copy().clip(lower=0)
+    negative = mom.copy().clip(upper=0).abs()
+    pos_sum = positive.rolling(length).sum()
+    neg_sum = negative.rolling(length).sum()
 
-Kwargs:
-    adjust (bool, optional): Use adjust option for EMA calculation. Default: False
-    sma (bool, optional): If True, uses SMA for initial value for EMA calculation. Default: True
-    talib (bool): If True, uses TA-Libs implementation for CMO. Otherwise uses EMA version. Default: True
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""
+    return (pos_sum - neg_sum) / (pos_sum + neg_sum)

@@ -1,21 +1,56 @@
 # -*- coding: utf-8 -*-
-from pandas_ta import Imports
-from pandas_ta.utils import get_offset, non_zero_range, verify_series
+from pandas import Series
+from pandas_ta._typing import DictLike, Int, IntFloat
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    non_zero_range,
+    v_offset,
+    v_scalar,
+    v_series,
+    v_talib
+)
 
 
-def bop(open_, high, low, close, scalar=None, talib=None, offset=None, **kwargs):
-    """Indicator: Balance of Power (BOP)"""
-    # Validate Arguments
-    open_ = verify_series(open_)
-    high = verify_series(high)
-    low = verify_series(low)
-    close = verify_series(close)
-    scalar = float(scalar) if scalar else 1
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    # Calculate Result
-    if Imports["talib"] and mode_tal:
+def bop(
+    open_: Series, high: Series, low: Series, close: Series,
+    scalar: IntFloat = None, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Balance of Power
+
+    This indicator attempts to quantify the market strength of buyers
+    versus sellers.
+
+    Sources:
+        * [worden](http://www.worden.com/TeleChartHelp/Content/Indicators/Balance_of_Power.htm)
+
+    Parameters:
+        open_ (Series): ```open``` Series
+        high (Series): ```high``` Series
+        low (Series): ```low``` Series
+        close (Series): ```close``` Series
+        scalar (float): Scalar. Default: ```1```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    open_ = v_series(open_)
+    high = v_series(high)
+    low = v_series(low)
+    close = v_series(close)
+    scalar = v_scalar(scalar, 1)
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
+    if Imports["talib"] and mode_tal and close.size:
         from talib import BOP
         bop = BOP(open_, high, low, close)
     else:
@@ -27,44 +62,12 @@ def bop(open_, high, low, close, scalar=None, talib=None, offset=None, **kwargs)
     if offset != 0:
         bop = bop.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         bop.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        bop.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     bop.name = f"BOP"
     bop.category = "momentum"
 
     return bop
-
-
-bop.__doc__ = \
-"""Balance of Power (BOP)
-
-Balance of Power measure the market strength of buyers against sellers.
-
-Sources:
-    http://www.worden.com/TeleChartHelp/Content/Indicators/Balance_of_Power.htm
-
-Calculation:
-    BOP = scalar * (close - open) / (high - low)
-
-Args:
-    open (pd.Series): Series of 'open's
-    high (pd.Series): Series of 'high's
-    low (pd.Series): Series of 'low's
-    close (pd.Series): Series of 'close's
-    scalar (float): How much to magnify. Default: 1
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

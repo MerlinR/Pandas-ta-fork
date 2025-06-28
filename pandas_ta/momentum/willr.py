@@ -1,23 +1,56 @@
 # -*- coding: utf-8 -*-
-from pandas_ta import Imports
-from pandas_ta.utils import get_offset, verify_series
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.maps import Imports
+from pandas_ta.utils import v_offset, v_pos_default, v_series, v_talib
 
 
-def willr(high, low, close, length=None, talib=None, offset=None, **kwargs):
-    """Indicator: William's Percent R (WILLR)"""
-    # Validate arguments
-    length = int(length) if length and length > 0 else 14
-    min_periods = int(kwargs["min_periods"]) if "min_periods" in kwargs and kwargs["min_periods"] is not None else length
+
+def willr(
+    high: Series, low: Series, close: Series,
+    length: Int = None, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """William's Percent R
+
+    This indicator attempts to identify "overbought" and "oversold"
+    conditions similar to the RSI.
+
+    Sources:
+        * [tradingview](https://www.tradingview.com/wiki/Williams_%25R_(%25R))
+
+    Parameters:
+        high (Series): ```high``` Series
+        low (Series): ```low``` Series
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```14```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 14)
+    if "min_periods" in kwargs and kwargs["min_periods"] is not None:
+        min_periods = int(kwargs["min_periods"])
+    else:
+        min_periods = length
     _length = max(length, min_periods)
-    high = verify_series(high, _length)
-    low = verify_series(low, _length)
-    close = verify_series(close, _length)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
+    high = v_series(high, _length)
+    low = v_series(low, _length)
+    close = v_series(close, _length)
 
-    if high is None or low is None or close is None: return
+    if high is None or low is None or close is None:
+        return
 
-    # Calculate Result
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import WILLR
         willr = WILLR(high, low, close, length)
@@ -31,49 +64,12 @@ def willr(high, low, close, length=None, talib=None, offset=None, **kwargs):
     if offset != 0:
         willr = willr.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         willr.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        willr.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     willr.name = f"WILLR_{length}"
     willr.category = "momentum"
 
     return willr
-
-
-willr.__doc__ = \
-"""William's Percent R (WILLR)
-
-William's Percent R is a momentum oscillator similar to the RSI that
-attempts to identify overbought and oversold conditions.
-
-Sources:
-    https://www.tradingview.com/wiki/Williams_%25R_(%25R)
-
-Calculation:
-    Default Inputs:
-        length=20
-    LL = low.rolling(length).min()
-    HH = high.rolling(length).max()
-
-    WILLR = 100 * ((close - LL) / (HH - LL) - 1)
-
-Args:
-    high (pd.Series): Series of 'high's
-    low (pd.Series): Series of 'low's
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 14
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

@@ -1,67 +1,76 @@
 # -*- coding: utf-8 -*-
-from pandas_ta import Imports
-from pandas_ta.utils import get_offset, verify_series
+from numba import njit
+from pandas import Series
+from pandas_ta._typing import Array, DictLike, Int
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    nb_idiff,
+    v_offset,
+    v_pos_default,
+    v_series,
+    v_talib
+)
 
 
-def mom(close, length=None, talib=None, offset=None, **kwargs):
-    """Indicator: Momentum (MOM)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 10
-    close = verify_series(close, length)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    if close is None: return
+@njit(cache=True)
+def nb_mom(x, n):
+    return nb_idiff(x, n)
 
-    # Calculate Result
+
+def mom(
+    close: Series, length: Int = None, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Momentum
+
+    This indicator attempts to quantify speed by using the differences over
+    a bar length.
+
+    Sources:
+        * [onlinetradingconcepts](http://www.onlinetradingconcepts.com/TechnicalAnalysis/Momentum.html)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```1```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 10)
+    close = v_series(close, length + 1)
+
+    if close is None:
+        return
+
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import MOM
         mom = MOM(close, length)
     else:
-        mom = close.diff(length)
+        np_close = close.to_numpy()
+        _mom = nb_mom(np_close, length)
+        mom = Series(_mom, index=close.index)
 
     # Offset
     if offset != 0:
         mom = mom.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         mom.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        mom.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     mom.name = f"MOM_{length}"
     mom.category = "momentum"
 
     return mom
-
-
-mom.__doc__ = \
-"""Momentum (MOM)
-
-Momentum is an indicator used to measure a security's speed (or strength) of
-movement.  Or simply the change in price.
-
-Sources:
-    http://www.onlinetradingconcepts.com/TechnicalAnalysis/Momentum.html
-
-Calculation:
-    Default Inputs:
-        length=1
-    MOM = close.diff(length)
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 1
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

@@ -1,21 +1,58 @@
 # -*- coding: utf-8 -*-
-from pandas_ta.overlap import ma
-from pandas_ta.utils import get_drift, get_offset, verify_series
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.ma import ma
+from pandas_ta.utils import (
+    v_drift,
+    v_mamode,
+    v_offset,
+    v_pos_default,
+    v_series
+)
 
 
-def efi(close, volume, length=None, mamode=None, drift=None, offset=None, **kwargs):
-    """Indicator: Elder's Force Index (EFI)"""
-    # Validate arguments
-    length = int(length) if length and length > 0 else 13
-    mamode = mamode if isinstance(mamode, str) else "ema"
-    close = verify_series(close, length)
-    volume = verify_series(volume, length)
-    drift = get_drift(drift)
-    offset = get_offset(offset)
 
-    if close is None or volume is None: return
+def efi(
+    close: Series, volume: Series, length: Int = None,
+    mamode: str = None, drift: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Elder's Force Index
 
-    # Calculate Result
+    This indicator attempts to quantify movement magnitude as well as
+    potential reversals and price corrections.
+
+    Sources:
+        * [motivewave](https://www.motivewave.com/studies/elders_force_index.htm)
+        * [tradingview](https://www.tradingview.com/wiki/Elder%27s_Force_Index_(EFI))
+
+    Parameters:
+        close (Series): ```close``` Series
+        volume (Series): ```volume``` Series
+        length (int): The period. Default: ```13```
+        mamode (str): See ```help(ta.ma)```. Default: ```"ema"```
+        drift (int): Difference amount. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 13)
+    close = v_series(close, length)
+    volume = v_series(volume, length)
+
+    if close is None or volume is None:
+        return
+
+    mamode = v_mamode(mamode, "ema")
+    drift = v_drift(drift)
+    offset = v_offset(offset)
+
+    # Calculate
     pv_diff = close.diff(drift) * volume
     efi = ma(mamode, pv_diff, length=length)
 
@@ -23,53 +60,12 @@ def efi(close, volume, length=None, mamode=None, drift=None, offset=None, **kwar
     if offset != 0:
         efi = efi.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         efi.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        efi.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     efi.name = f"EFI_{length}"
     efi.category = "volume"
 
     return efi
-
-
-efi.__doc__ = \
-"""Elder's Force Index (EFI)
-
-Elder's Force Index measures the power behind a price movement using price
-and volume as well as potential reversals and price corrections.
-
-Sources:
-    https://www.tradingview.com/wiki/Elder%27s_Force_Index_(EFI)
-    https://www.motivewave.com/studies/elders_force_index.htm
-
-Calculation:
-    Default Inputs:
-        length=20, drift=1, mamode=None
-    EMA = Exponential Moving Average
-    SMA = Simple Moving Average
-
-    pv_diff = close.diff(drift) * volume
-    if mamode == 'sma':
-        EFI = SMA(pv_diff, length)
-    else:
-        EFI = EMA(pv_diff, length)
-
-Args:
-    close (pd.Series): Series of 'close's
-    volume (pd.Series): Series of 'volume's
-    length (int): The short period. Default: 13
-    drift (int): The diff period. Default: 1
-    mamode (str): See ```help(ta.ma)```. Default: 'ema'
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

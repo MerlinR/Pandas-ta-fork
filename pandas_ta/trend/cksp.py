@@ -1,29 +1,75 @@
 # -*- coding: utf-8 -*-
-from pandas import DataFrame
+from numpy import isnan
+from pandas import DataFrame, Series
+from pandas_ta._typing import DictLike, Int, IntFloat
+from pandas_ta.utils import (
+    v_mamode,
+    v_offset,
+    v_pos_default,
+    v_series,
+    v_tradingview
+)
 from pandas_ta.volatility import atr
-from pandas_ta.utils import get_offset, verify_series
 
 
-def cksp(high, low, close, p=None, x=None, q=None, tvmode=None, offset=None, **kwargs):
-    """Indicator: Chande Kroll Stop (CKSP)"""
-    # Validate Arguments
-    # TV defaults=(10,1,9), book defaults = (10,3,20)
-    p = int(p) if p and p > 0 else 10
-    x = float(x) if x and x > 0 else 1 if tvmode is True else 3
-    q = int(q) if q and q > 0 else 9 if tvmode is True else 20
-    _length = max(p, q, x)
 
-    high = verify_series(high, _length)
-    low = verify_series(low, _length)
-    close = verify_series(close, _length)
-    if high is None or low is None or close is None: return
+def cksp(
+    high: Series, low: Series, close: Series,
+    p: Int = None, x: IntFloat = None, q: Int = None,
+    tvmode: bool = None, mamode: str = None,
+    offset: Int = None, **kwargs: DictLike
+) -> DataFrame:
+    """Chande Kroll Stop
 
-    offset = get_offset(offset)
-    tvmode = tvmode if isinstance(tvmode, bool) else True
-    mamode = "rma" if tvmode is True else "sma"
+    This indicator, by Tushar Chande and Stanley Kroll, attempts to identify
+    trends with long and short stops.
 
-    # Calculate Result
+    Sources:
+        * "The New Technical Trader", Wiley 1st ed. ISBN 9780471597803, page 95
+        * [multicharts](https://www.multicharts.com/discussion/viewtopic.php?t=48914)
+
+    Parameters:
+        close (Series): ```close``` Series
+        p (int): ATR and first stop period; see Note.
+            Default: ```10``` for both modes
+        x (float): ATR scalar; see Note. Default: ```1``` or ```3```
+        q (int): Second stop period; see Note. Default: ```9``` or ```20```
+        tvmode (bool): Trading View mode. Default: ```True```
+        mamode (str): See ```help(ta.ma)```. Default: ```None```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (DataFrame): 2 columns
+
+    Note: Book vs TradingView Defaults
+        * Book: ```p=10, x=3, q=20, ma="sma"```
+        * Trading View: ```p=10, x=1, q=9,  ma="rma"```
+    """
+    # Validate
+    mode_tv = v_tradingview(tvmode)
+    p = v_pos_default(p, 10)
+    # TODO: clean up x and q
+    x = float(x) if isinstance(x, float) and x > 0 else 1 if tvmode is True else 3
+    q = int(q) if isinstance(q, float) and q > 0 else 9 if tvmode is True else 20
+    _length = p + q
+
+    high = v_series(high, _length)
+    low = v_series(low, _length)
+    close = v_series(close, _length)
+
+    if high is None or low is None or close is None:
+        return
+
+    mamode = v_mamode(mamode, "rma") if mode_tv else v_mamode(mamode, "sma")
+    offset = v_offset(offset)
+
+    # Calculate
     atr_ = atr(high=high, low=low, close=close, length=p, mamode=mamode)
+    if atr_ is None or all(isnan(atr_)):
+        return
 
     long_stop_ = high.rolling(p).max() - x * atr_
     long_stop = long_stop_.rolling(q).max()
@@ -36,67 +82,20 @@ def cksp(high, low, close, p=None, x=None, q=None, tvmode=None, offset=None, **k
         long_stop = long_stop.shift(offset)
         short_stop = short_stop.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         long_stop.fillna(kwargs["fillna"], inplace=True)
         short_stop.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        long_stop.fillna(method=kwargs["fill_method"], inplace=True)
-        short_stop.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     _props = f"_{p}_{x}_{q}"
     long_stop.name = f"CKSPl{_props}"
     short_stop.name = f"CKSPs{_props}"
     long_stop.category = short_stop.category = "trend"
 
-    # Prepare DataFrame to return
-    ckspdf = DataFrame({long_stop.name: long_stop, short_stop.name: short_stop})
-    ckspdf.name = f"CKSP{_props}"
-    ckspdf.category = long_stop.category
+    data = {long_stop.name: long_stop, short_stop.name: short_stop}
+    df = DataFrame(data, index=close.index)
+    df.name = f"CKSP{_props}"
+    df.category = long_stop.category
 
-    return ckspdf
-
-
-cksp.__doc__ = \
-"""Chande Kroll Stop (CKSP)
-
-The Tushar Chande and Stanley Kroll in their book
-“The New Technical Trader”. It is a trend-following indicator,
-identifying your stop by calculating the average true range of
-the recent market volatility. The indicator defaults to the implementation
-found on tradingview but it provides the original book implementation as well,
-which differs by the default periods and moving average mode. While the trading
-view implementation uses the Welles Wilder moving average, the book uses a
-simple moving average.
-
-Sources:
-    https://www.multicharts.com/discussion/viewtopic.php?t=48914
-    "The New Technical Trader", Wikey 1st ed. ISBN 9780471597803, page 95
-
-Calculation:
-    Default Inputs:
-        p=10, x=1, q=9, tvmode=True
-    ATR = Average True Range
-
-    LS0 = high.rolling(p).max() - x * ATR(length=p)
-    LS = LS0.rolling(q).max()
-
-    SS0 = high.rolling(p).min() + x * ATR(length=p)
-    SS = SS0.rolling(q).min()
-
-Args:
-    close (pd.Series): Series of 'close's
-    p (int): ATR and first stop period. Default: 10 in both modes
-    x (float): ATR scalar. Default: 1 in TV mode, 3 otherwise
-    q (int): Second stop period. Default: 9 in TV mode, 20 otherwise
-    tvmode (bool): Trading View or book implementation mode. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.DataFrame: long and short columns.
-"""
+    return df

@@ -1,35 +1,65 @@
 # -*- coding: utf-8 -*-
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.utils import v_offset, v_pos_default, v_series
 from .decreasing import decreasing
 from .increasing import increasing
-from pandas_ta.utils import get_offset, verify_series
 
 
-def long_run(fast, slow, length=None, offset=None, **kwargs):
-    """Indicator: Long Run"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 2
-    fast = verify_series(fast, length)
-    slow = verify_series(slow, length)
-    offset = get_offset(offset)
 
-    if fast is None or slow is None: return
+def long_run(
+    fast: Series, slow: Series, length: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Long Run
 
-    # Calculate Result
-    pb = increasing(fast, length) & decreasing(slow, length)  # potential bottom or bottom
-    bi = increasing(fast, length) & increasing(slow, length)  # fast and slow are increasing
+    This indicator, by Kevin Johnson, attempts to identify long runs.
+
+    Sources:
+        * Kevin Johnson
+        * [tradingview](https://www.tradingview.com/script/Z2mq63fE-Trade-Archer-Moving-Averages-v1-4F/)
+
+    Parameters:
+        fast (Series): ```fast``` Series.
+        slow (Series): ```slow``` Series.
+        length (int): The ```decreasing``` and ```increasing``` period.
+            Default: ```2```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 2)
+    fast = v_series(fast, length)
+    slow = v_series(slow, length)
+
+    if fast is None or slow is None:
+        return
+
+    offset = v_offset(offset)
+
+    # Calculate
+    inc = increasing(fast, length)
+
+    # potential bottom or bottom
+    pb = inc & decreasing(slow, length)
+    # fast and slow are increasing
+    bi = inc & increasing(slow, length)
     long_run = pb | bi
 
     # Offset
     if offset != 0:
         long_run = long_run.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         long_run.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        long_run.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     long_run.name = f"LR_{length}"
     long_run.category = "trend"
 

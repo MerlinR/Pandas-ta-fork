@@ -1,67 +1,65 @@
 # -*- coding: utf-8 -*-
-from pandas_ta import Imports
-from pandas_ta.utils import get_offset, signed_series, verify_series
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.maps import Imports
+from pandas_ta.utils import signed_series, v_offset, v_series, v_talib
 
 
-def obv(close, volume, talib=None, offset=None, **kwargs):
-    """Indicator: On Balance Volume (OBV)"""
-    # Validate arguments
-    close = verify_series(close)
-    volume = verify_series(volume)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    # Calculate Result
+def obv(
+    close: Series, volume: Series, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """On Balance Volume
+
+    This indicator attempts to quantify buying and selling pressure.
+
+    Sources:
+        * [motivewave](https://www.motivewave.com/studies/on_balance_volume.htm)
+        * [tradingtechnologies](https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/on-balance-volume-obv/)
+        * [tradingview](https://www.tradingview.com/wiki/On_Balance_Volume_(OBV))
+
+    Parameters:
+        close (Series): ```close``` Series
+        volume (Series): ```volume``` Series
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    _length = 1
+    close = v_series(close, _length)
+    volume = v_series(volume, _length)
+
+    if close is None or volume is None:
+        return
+
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import OBV
         obv = OBV(close, volume)
     else:
-        signed_volume = signed_series(close, initial=1) * volume
-        obv = signed_volume.cumsum()
+        sv = signed_series(close, initial=1) * volume
+        obv = sv.cumsum()
 
     # Offset
     if offset != 0:
         obv = obv.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         obv.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        obv.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     obv.name = f"OBV"
     obv.category = "volume"
 
     return obv
-
-
-obv.__doc__ = \
-"""On Balance Volume (OBV)
-
-On Balance Volume is a cumulative indicator to measure buying and selling
-pressure.
-
-Sources:
-    https://www.tradingview.com/wiki/On_Balance_Volume_(OBV)
-    https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/on-balance-volume-obv/
-    https://www.motivewave.com/studies/on_balance_volume.htm
-
-Calculation:
-    signed_volume = signed_series(close, initial=1) * volume
-    obv = signed_volume.cumsum()
-
-Args:
-    close (pd.Series): Series of 'close's
-    volume (pd.Series): Series of 'volume's
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

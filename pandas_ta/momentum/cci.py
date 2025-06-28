@@ -1,85 +1,75 @@
 # -*- coding: utf-8 -*-
-from pandas_ta import Imports
+from pandas import Series
+from pandas_ta._typing import DictLike, Int, IntFloat
+from pandas_ta.maps import Imports
 from pandas_ta.overlap import hlc3, sma
-from pandas_ta.statistics.mad import mad
-from pandas_ta.utils import get_offset, verify_series
+from pandas_ta.statistics import mad
+from pandas_ta.utils import v_offset, v_pos_default, v_series, v_talib
 
 
-def cci(high, low, close, length=None, c=None, talib=None, offset=None, **kwargs):
-    """Indicator: Commodity Channel Index (CCI)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 14
-    c = float(c) if c and c > 0 else 0.015
-    high = verify_series(high, length)
-    low = verify_series(low, length)
-    close = verify_series(close, length)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    if high is None or low is None or close is None: return
+def cci(
+    high: Series, low: Series, close: Series, length: Int = None,
+    c: IntFloat = None, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Commodity Channel Index
 
-    # Calculate Result
+    This indicator attempts to identify "overbought" and "oversold" levels
+    relative to a mean.
+
+    Sources:
+        * [tradingview](https://www.tradingview.com/wiki/Commodity_Channel_Index_(CCI))
+
+    Parameters:
+        high (Series): ```high``` Series
+        low (Series): ```low``` Series
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```14```
+        c (float): Scaling Constant. Default: ```0.015```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 14)
+    high = v_series(high, length)
+    low = v_series(low, length)
+    close = v_series(close, length)
+
+    if high is None or low is None or close is None:
+        return
+
+    c = v_pos_default(c, 0.015)
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import CCI
         cci = CCI(high, low, close, length)
     else:
-        typical_price = hlc3(high=high, low=low, close=close)
-        mean_typical_price = sma(typical_price, length=length)
+        typical_price = hlc3(high=high, low=low, close=close, talib=mode_tal)
+        mean_typical_price = sma(typical_price, length=length, talib=mode_tal)
         mad_typical_price = mad(typical_price, length=length)
 
-        cci = typical_price - mean_typical_price
-        cci /= c * mad_typical_price
+        cci = typical_price - mean_typical_price / (c * mad_typical_price)
 
     # Offset
     if offset != 0:
         cci = cci.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         cci.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        cci.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     cci.name = f"CCI_{length}_{c}"
     cci.category = "momentum"
 
     return cci
-
-
-cci.__doc__ = \
-"""Commodity Channel Index (CCI)
-
-Commodity Channel Index is a momentum oscillator used to primarily identify
-overbought and oversold levels relative to a mean.
-
-Sources:
-    https://www.tradingview.com/wiki/Commodity_Channel_Index_(CCI)
-
-Calculation:
-    Default Inputs:
-        length=14, c=0.015
-    SMA = Simple Moving Average
-    MAD = Mean Absolute Deviation
-    tp = typical_price = hlc3 = (high + low + close) / 3
-    mean_tp = SMA(tp, length)
-    mad_tp = MAD(tp, length)
-    CCI = (tp - mean_tp) / (c * mad_tp)
-
-Args:
-    high (pd.Series): Series of 'high's
-    low (pd.Series): Series of 'low's
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 14
-    c (float): Scaling Constant. Default: 0.015
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

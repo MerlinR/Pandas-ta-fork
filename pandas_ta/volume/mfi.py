@@ -1,99 +1,99 @@
 # -*- coding: utf-8 -*-
-from pandas import DataFrame
-from pandas_ta import Imports
+from sys import float_info as sflt
+from numpy import convolve, maximum, nan, ones, roll, where
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.maps import Imports
 from pandas_ta.overlap import hlc3
-from pandas_ta.utils import get_drift, get_offset, verify_series
+from pandas_ta.utils import (
+    nb_nonzero_range,
+    v_drift,
+    v_offset,
+    v_pos_default,
+    v_series,
+    v_talib
+)
 
 
-def mfi(high, low, close, volume, length=None, talib=None, drift=None, offset=None, **kwargs):
-    """Indicator: Money Flow Index (MFI)"""
-    # Validate arguments
-    length = int(length) if length and length > 0 else 14
-    high = verify_series(high, length)
-    low = verify_series(low, length)
-    close = verify_series(close, length)
-    volume = verify_series(volume, length)
-    drift = get_drift(drift)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    if high is None or low is None or close is None or volume is None: return
+def mfi(
+    high: Series, low: Series, close: Series, volume: Series,
+    length: Int = None, talib: bool = None, drift: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Money Flow Index
 
-    # Calculate Result
+    This indicator is an oscillator that attempts to quantify buying and
+    selling pressure.
+
+    Sources:
+        * [tradingview](https://www.tradingview.com/wiki/Money_Flow_(MFI))
+
+    Parameters:
+        high (Series): ```high``` Series
+        low (Series): ```low``` Series
+        close (Series): ```close``` Series
+        volume (Series): ```volume``` Series
+        length (int): The period. Default: ```14```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        drift (int): Difference amount. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+
+    Warning:
+        TA-Lib Correlation: ```np.float64(0.9959302104966524)```
+
+    Tip:
+        Corrective contributions welcome!
+    """
+    # Validate
+    length = v_pos_default(length, 14)
+    _length = length + 1
+    high = v_series(high, _length)
+    low = v_series(low, _length)
+    close = v_series(close, _length)
+    volume = v_series(volume, _length)
+
+    if high is None or low is None or close is None or volume is None:
+        return
+
+    mode_tal = v_talib(talib)
+    drift = v_drift(drift)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import MFI
         mfi = MFI(high, low, close, volume, length)
     else:
-        typical_price = hlc3(high=high, low=low, close=close)
-        raw_money_flow = typical_price * volume
+        m, _ones = close.size, ones(length)
 
-        tdf = DataFrame({"diff": 0, "rmf": raw_money_flow, "+mf": 0, "-mf": 0})
+        tp = (high.to_numpy() + low.to_numpy() + close.to_numpy()) / 3.0
+        smf = tp * volume.to_numpy() * where(tp > roll(tp, shift=drift), 1, -1)
 
-        tdf.loc[(typical_price.diff(drift) > 0), "diff"] = 1
-        tdf.loc[tdf["diff"] == 1, "+mf"] = raw_money_flow
+        pos, neg = maximum(smf, 0), maximum(-smf, 0)
+        avg_gain, avg_loss = convolve(pos, _ones)[:m], convolve(neg, _ones)[:m]
 
-        tdf.loc[(typical_price.diff(drift) < 0), "diff"] = -1
-        tdf.loc[tdf["diff"] == -1, "-mf"] = raw_money_flow
+        _mfi = (100.0 * avg_gain) / (avg_gain + avg_loss + sflt.epsilon)
+        _mfi[:length] = nan
 
-        psum = tdf["+mf"].rolling(length).sum()
-        nsum = tdf["-mf"].rolling(length).sum()
-        tdf["mr"] = psum / nsum
-        mfi = 100 * psum / (psum + nsum)
-        tdf["mfi"] = mfi
+        mfi = Series(_mfi, index=close.index)
 
     # Offset
     if offset != 0:
         mfi = mfi.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         mfi.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        mfi.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     mfi.name = f"MFI_{length}"
     mfi.category = "volume"
 
     return mfi
-
-
-mfi.__doc__ = \
-"""Money Flow Index (MFI)
-
-Money Flow Index is an oscillator indicator that is used to measure buying and
-selling pressure by utilizing both price and volume.
-
-Sources:
-    https://www.tradingview.com/wiki/Money_Flow_(MFI)
-
-Calculation:
-    Default Inputs:
-        length=14, drift=1
-    tp = typical_price = hlc3 = (high + low + close) / 3
-    rmf = raw_money_flow = tp * volume
-
-    pmf = pos_money_flow = SUM(rmf, length) if tp.diff(drift) > 0 else 0
-    nmf = neg_money_flow = SUM(rmf, length) if tp.diff(drift) < 0 else 0
-
-    MFR = money_flow_ratio = pmf / nmf
-    MFI = money_flow_index = 100 * pmf / (pmf + nmf)
-
-Args:
-    high (pd.Series): Series of 'high's
-    low (pd.Series): Series of 'low's
-    close (pd.Series): Series of 'close's
-    volume (pd.Series): Series of 'volume's
-    length (int): The sum period. Default: 14
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    drift (int): The difference period. Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

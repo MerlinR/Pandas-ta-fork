@@ -1,81 +1,98 @@
 # -*- coding: utf-8 -*-
-from . import (
-    dema, ema, hma, linreg, rma, sma, swma, t3, tema, trima, vidya, wma
-)
-from pandas_ta.utils import get_offset, verify_series
+from sys import modules as sys_modules
+from numpy import isnan
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.utils import v_mamode, v_offset, v_pos_default, v_series
+
+# Available MAs for zlma
+from .dema import dema
+from .ema import ema
+from .fwma import fwma
+from .hma import hma
+from .linreg import linreg
+from .midpoint import midpoint
+from .pwma import pwma
+from .rma import rma
+from .sinwma import sinwma
+from .sma import sma
+from .ssf import ssf
+from .swma import swma
+from .t3 import t3
+from .tema import tema
+from .trima import trima
+from .vidya import vidya
+from .wma import wma
 
 
-def zlma(close, length=None, mamode=None, offset=None, **kwargs):
-    """Indicator: Zero Lag Moving Average (ZLMA)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 10
-    mamode = mamode.lower() if isinstance(mamode, str) else "ema"
-    close = verify_series(close, length)
-    offset = get_offset(offset)
 
-    if close is None: return
+def zlma(
+    close: Series, length: Int = None, mamode: str = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Zero Lag Moving Average
 
-    # Calculate Result
+    This indicator, by John Ehlers and Ric Way, attempts to eliminate the lag
+    often introduced in other moving averages.
+
+    Sources:
+        * [wikipedia](https://en.wikipedia.org/wiki/Zero_lag_exponential_moving_average)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```10```
+        mamode (str): One of: "dema", "ema", "fwma", "hma", "linreg",
+            "midpoint", "pwma", "rma", "sinwma", "ssf", "swma", "t3",
+            "tema", "trima", "vidya", or "wma". Default: ```"ema"```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 10)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    mamode = v_mamode(mamode, "ema")
+    supported_mas = [
+        "dema", "ema", "fwma", "hma", "linreg", "midpoint", "pwma", "rma",
+        "sinwma", "sma", "ssf", "swma", "t3", "tema", "trima", "vidya", "wma"
+    ]
+
+    if mamode not in supported_mas:
+        return
+
+    offset = v_offset(offset)
+
+    # Calculate
     lag = int(0.5 * (length - 1))
     close_ = 2 * close - close.shift(lag)
-    if   mamode == "dema":   zlma = dema(close_, length=length, **kwargs)
-    elif mamode == "hma":    zlma = hma(close_, length=length, **kwargs)
-    elif mamode == "linreg": zlma = linreg(close_, length=length, **kwargs)
-    elif mamode == "rma":    zlma = rma(close_, length=length, **kwargs)
-    elif mamode == "sma":    zlma = sma(close_, length=length, **kwargs)
-    elif mamode == "swma":   zlma = swma(close_, length=length, **kwargs)
-    elif mamode == "t3":     zlma = t3(close_, length=length, **kwargs)
-    elif mamode == "tema":   zlma = tema(close_, length=length, **kwargs)
-    elif mamode == "trima":  zlma = trima(close_, length=length, **kwargs)
-    elif mamode == "vidya":  zlma = vidya(close_, length=length, **kwargs)
-    elif mamode == "wma":    zlma = wma(close_, length=length, **kwargs)
-    else:                    zlma = ema(close_, length=length, **kwargs) # "ema"
+
+    kwargs.update({"close": close_})
+    kwargs.update({"length": length})
+
+    fn = getattr(sys_modules[__name__], mamode)
+    zlma = fn(**kwargs)
+
+    if zlma is None or all(isnan(zlma)):
+        return  # Emergency Break
 
     # Offset
     if offset != 0:
         zlma = zlma.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         zlma.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        zlma.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
+    # Name and Category
     zlma.name = f"ZL_{zlma.name}"
     zlma.category = "overlap"
 
     return zlma
-
-
-zlma.__doc__ = \
-"""Zero Lag Moving Average (ZLMA)
-
-The Zero Lag Moving Average attempts to eliminate the lag associated
-with moving averages.  This is an adaption created by John Ehler and Ric Way.
-
-Sources:
-    https://en.wikipedia.org/wiki/Zero_lag_exponential_moving_average
-
-Calculation:
-    Default Inputs:
-        length=10, mamode=EMA
-    EMA = Exponential Moving Average
-    lag = int(0.5 * (length - 1))
-
-    SOURCE = 2 * close - close.shift(lag)
-    ZLMA = MA(kind=mamode, SOURCE, length)
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 10
-    mamode (str): Options: 'ema', 'hma', 'sma', 'wma'. Default: 'ema'
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

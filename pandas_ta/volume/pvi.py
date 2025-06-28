@@ -1,77 +1,111 @@
 # -*- coding: utf-8 -*-
-from pandas_ta.momentum import roc
-from pandas_ta.utils import get_offset, signed_series, verify_series
+from numba import njit
+from numpy import empty, float64, zeros_like
+from pandas import DataFrame, Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.ma import ma
+from pandas_ta.utils import (
+    v_bool,
+    v_mamode,
+    v_offset,
+    v_pos_default,
+    v_series
+)
 
 
-def pvi(close, volume, length=None, initial=None, offset=None, **kwargs):
-    """Indicator: Positive Volume Index (PVI)"""
-    # Validate arguments
-    length = int(length) if length and length > 0 else 1
-    # min_periods = int(kwargs["min_periods"]) if "min_periods" in kwargs and kwargs["min_periods"] is not None else length
-    initial = int(initial) if initial and initial > 0 else 1000
-    close = verify_series(close, length)
-    volume = verify_series(volume, length)
-    offset = get_offset(offset)
+@njit(cache=True)
+def nb_pvi(np_close, np_volume, initial):
+    result = zeros_like(np_close, dtype=float64)
+    result[0] = initial
 
-    if close is None or volume is None: return
+    m = np_close.size
+    for i in range(1, m):
+        if np_volume[i] > np_volume[i - 1]:
+            result[i] = result[i - i] * (np_close[i] / np_close[i - 1])
+        else:
+            result[i] = result[i - i]
 
-    # Calculate Result
-    signed_volume = signed_series(volume, 1)
-    pvi = roc(close=close, length=length) * signed_volume[signed_volume > 0].abs()
-    pvi.fillna(0, inplace=True)
-    pvi.iloc[0] = initial
-    pvi = pvi.cumsum()
+    return result
+
+
+
+def pvi(
+    close: Series, volume: Series, length: Int = None, initial: Int = None,
+    mamode: str = None, overlay: bool = None, offset: Int = None,
+    **kwargs: DictLike
+) -> DataFrame:
+    """Positive Volume Index
+
+    This indicator attempts to identify where smart money is active.
+
+    Sources:
+        * [investopedia](https://www.investopedia.com/terms/p/pvi.asp)
+        * [sierrachart](https://www.sierrachart.com/index.php?page=doc/StudiesReference.php&ID=101)
+
+    Parameters:
+        close (Series): ```close``` Series
+        volume (Series): ```volume``` Series
+        length (int): The period. Default: ```255```
+        initial (int): Initial value. Default: ```100```
+        mamode (str): See ```help(ta.ma)```. Default: ```"ema"```
+        overlay (bool): Overlay ```initial```. Default: ```False```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (DataFrame): 2 columns
+
+    Note:
+        Commonly paired with [nvi](volume.md/#src.pandas_ta.volume.nvi.nvi)
+    """
+    # Validate
+    length = v_pos_default(length, 255)
+    close = v_series(close, length + 1)
+    volume = v_series(volume, length + 1)
+
+    if close is None or volume is None:
+        return
+
+    mamode = v_mamode(mamode, "ema")
+    overlay = v_bool(overlay, False)
+    if overlay:
+        initial = close.iloc[0]
+    initial = v_pos_default(initial, 100)
+    offset = v_offset(offset)
+
+    # Calculate
+    np_close, np_volume = close.to_numpy(), volume.to_numpy()
+    _pvi = nb_pvi(np_close, np_volume, initial)
+
+    pvi = Series(_pvi, index=close.index)
+    pvi_ma = ma(mamode, pvi, length=length)
 
     # Offset
     if offset != 0:
         pvi = pvi.shift(offset)
+        pvi_ma = pvi_ma.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         pvi.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        pvi.fillna(method=kwargs["fill_method"], inplace=True)
+        pvi_ma.fillna(kwargs["fillna"], inplace=True)
 
-    # Name and Categorize it
-    pvi.name = f"PVI_{length}"
-    pvi.category = "volume"
+    # Name and Category
+    _mode = mamode.lower()[0] if len(mamode) else ""
+    _props = f"{_mode}_{length}"
+    pvi.name = f"PVI"
+    pvi_ma.name = f"PVI{_props}"
+    pvi.category = pvi_ma.category = "volume"
 
-    return pvi
+    data = { pvi.name: pvi}
+    if np_close.size > length + 1:
+        data[pvi_ma.name] = pvi_ma
+    df = DataFrame(data, index=close.index)
 
+    # Name and Category
+    df.name = pvi.name
+    df.category = pvi.category
 
-pvi.__doc__ = \
-"""Positive Volume Index (PVI)
-
-The Positive Volume Index is a cumulative indicator that uses volume change in
-an attempt to identify where smart money is active.
-Used in conjunction with NVI.
-
-Sources:
-    https://www.investopedia.com/terms/p/pvi.asp
-
-Calculation:
-    Default Inputs:
-        length=1, initial=1000
-    ROC = Rate of Change
-
-    roc = ROC(close, length)
-    signed_volume = signed_series(volume, initial=1)
-    pvi = signed_volume[signed_volume > 0].abs() * roc_
-    pvi.fillna(0, inplace=True)
-    pvi.iloc[0]= initial
-    pvi = pvi.cumsum()
-
-Args:
-    close (pd.Series): Series of 'close's
-    volume (pd.Series): Series of 'volume's
-    length (int): The short period. Default: 13
-    initial (int): The short period. Default: 1000
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""
+    return df

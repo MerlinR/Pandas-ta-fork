@@ -1,92 +1,94 @@
 # -*- coding: utf-8 -*-
+from numpy import arange, dot, float64, nan, zeros_like
+from numba import njit
 from pandas import Series
-from pandas_ta import Imports
-from pandas_ta.utils import get_offset, verify_series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    v_ascending,
+    v_offset,
+    v_pos_default,
+    v_series,
+    v_talib
+)
 
 
-def wma(close, length=None, asc=None, talib=None, offset=None, **kwargs):
-    """Indicator: Weighted Moving Average (WMA)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 10
-    asc = asc if asc else True
-    close = verify_series(close, length)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    if close is None: return
+@njit(cache=True)
+def nb_wma(x, n, asc, prenan):
+    m = x.size
+    w = arange(1, n + 1, dtype=float64)
+    result = zeros_like(x, dtype=float64)
 
-    # Calculate Result
+    if not asc:
+        w = w[::-1]
+
+    for i in range(n - 1, m):
+        result[i] = (w * x[i - n + 1:i + 1]).sum()
+    result *= 2 / (n * n + n)
+
+    if prenan:
+        result[:n - 1] = nan
+
+    return result
+
+
+def wma(
+    close: Series, length: Int = None,
+    asc: bool = None, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Weighted Moving Average
+
+    This indicator is a Moving Average where the weights are linearly
+    increasing and the most recent data has the heaviest weight.
+
+    Sources:
+        * [wikipedia](https://en.wikipedia.org/wiki/Moving_average#Weighted_moving_average)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```10```
+        asc (bool): Recent values weigh more. Default: ```True```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 10)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    asc = v_ascending(asc)
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import WMA
         wma = WMA(close, length)
     else:
-        from numpy import arange as npArange
-        from numpy import dot as npDot
-
-        total_weight = 0.5 * length * (length + 1)
-        weights_ = Series(npArange(1, length + 1))
-        weights = weights_ if asc else weights_[::-1]
-
-        def linear(w):
-            def _compute(x):
-                return npDot(x, w) / total_weight
-            return _compute
-
-        close_ = close.rolling(length, min_periods=length)
-        wma = close_.apply(linear(weights), raw=True)
+        np_close = close.to_numpy()
+        wma_ = nb_wma(np_close, length, asc, True)
+        wma = Series(wma_, index=close.index)
 
     # Offset
     if offset != 0:
         wma = wma.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         wma.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        wma.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
+    # Name and Category
     wma.name = f"WMA_{length}"
     wma.category = "overlap"
 
     return wma
-
-
-wma.__doc__ = \
-"""Weighted Moving Average (WMA)
-
-The Weighted Moving Average where the weights are linearly increasing and
-the most recent data has the heaviest weight.
-
-Sources:
-    https://en.wikipedia.org/wiki/Moving_average#Weighted_moving_average
-
-Calculation:
-    Default Inputs:
-        length=10, asc=True
-    total_weight = 0.5 * length * (length + 1)
-    weights_ = [1, 2, ..., length + 1]  # Ascending
-    weights = weights if asc else weights[::-1]
-
-    def linear_weights(w):
-        def _compute(x):
-            return (w * x).sum() / total_weight
-        return _compute
-
-    WMA = close.rolling(length)_.apply(linear_weights(weights), raw=True)
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 10
-    asc (bool): Recent values weigh more. Default: True
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

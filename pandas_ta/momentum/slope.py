@@ -1,73 +1,71 @@
 # -*- coding: utf-8 -*-
-from numpy import arctan as npAtan
-from numpy import pi as npPi
-from pandas_ta.utils import get_offset, verify_series
+from numpy import arctan, pi, rad2deg
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.utils import (
+    nb_idiff,
+    v_bool,
+    v_offset,
+    v_pos_default,
+    v_series
+)
 
 
-def slope( close, length=None, as_angle=None, to_degrees=None, vertical=None, offset=None, **kwargs):
-    """Indicator: Slope"""
-    # Validate arguments
-    length = int(length) if length and length > 0 else 1
-    as_angle = True if isinstance(as_angle, bool) else False
-    to_degrees = True if isinstance(to_degrees, bool) else False
-    close = verify_series(close, length)
-    offset = get_offset(offset)
 
-    if close is None: return
+def slope(
+    close: Series, length: Int = None,
+    as_angle: bool = None, to_degrees: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Slope
 
-    # Calculate Result
-    slope = close.diff(length) / length
+    Calculates a rolling slope.
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```1```
+        as_angle (bool): Converts slope to an angle in radians
+            per ```np.arctan()```. Default: ```False```
+        to_degrees (value): If ```as_angle=True```, converts radians to
+            degrees. Default: ```False```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 1)
+    close = v_series(close, length + 1)
+
+    if close is None:
+        return
+
+    as_angle = v_bool(as_angle, False)
+    to_degrees = v_bool(to_degrees, False)
+    offset = v_offset(offset)
+
+    # Calculate
+    np_close = close.to_numpy()
+    _slope = nb_idiff(np_close, length) / length
     if as_angle:
-        slope = slope.apply(npAtan)
+        _slope = arctan(_slope)
         if to_degrees:
-            slope *= 180 / npPi
+            _slope = rad2deg(_slope)
+    slope = Series(_slope, index=close.index)
 
     # Offset
     if offset != 0:
         slope = slope.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         slope.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        slope.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     slope.name = f"SLOPE_{length}" if not as_angle else f"ANGLE{'d' if to_degrees else 'r'}_{length}"
     slope.category = "momentum"
 
     return slope
-
-
-slope.__doc__ = \
-"""Slope
-
-Returns the slope of a series of length n. Can convert the slope to angle.
-Default: slope.
-
-Sources: Algebra I
-
-Calculation:
-    Default Inputs:
-        length=1
-    slope = close.diff(length) / length
-
-    if as_angle:
-        slope = slope.apply(atan)
-        if to_degrees:
-            slope *= 180 / PI
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period.  Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    as_angle (value, optional): Converts slope to an angle. Default: False
-    to_degrees (value, optional): Converts slope angle to degrees. Default: False
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

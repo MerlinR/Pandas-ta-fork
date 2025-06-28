@@ -1,78 +1,97 @@
 # -*- coding: utf-8 -*-
-from .atr import atr
-from pandas_ta import Imports
-from pandas_ta.utils import get_drift, get_offset, verify_series
+from pandas import Series
+from pandas_ta._typing import DictLike, Int, IntFloat
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    v_bool,
+    v_drift,
+    v_mamode,
+    v_offset,
+    v_pos_default,
+    v_scalar,
+    v_series,
+    v_talib
+)
+from pandas_ta.volatility import atr
 
 
-def natr(high, low, close, length=None, scalar=None, mamode=None, talib=None, drift=None, offset=None, **kwargs):
-    """Indicator: Normalized Average True Range (NATR)"""
-    # Validate arguments
-    length = int(length) if length and length > 0 else 14
-    mamode = mamode if isinstance(mamode, str) else "ema"
-    scalar = float(scalar) if scalar else 100
-    high = verify_series(high, length)
-    low = verify_series(low, length)
-    close = verify_series(close, length)
-    drift = get_drift(drift)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    if high is None or low is None or close is None: return
+def natr(
+    high: Series, low: Series, close: Series,
+    length: Int = None, scalar: IntFloat = None, mamode: str = None,
+    talib: bool = None, prenan: bool = None, drift: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Normalized Average True Range
 
-    # Calculate Result
+    This indicator applies a normalizer to Average True Range.
+
+    Sources:
+        * [tradingtechnologies](https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/normalized-average-true-range-natr/)
+
+    Parameters:
+        high (Series): ```high``` Series
+        low (Series): ```low``` Series
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```20```
+        scalar (float): Scalar. Default: ```100```
+        mamode (str): See ```help(ta.ma)```. Default: ```"ema"```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        prenan (bool): Sets initial values to ```np.nan``` based
+            on ```drift```. Default: ```False```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+
+    Warning:
+        TA-Lib Correlation: ```np.float64(0.9506743353852364)```
+
+    Tip:
+        Corrective contributions welcome!
+    """
+    # Validate
+    length = v_pos_default(length, 14)
+    _length = length + 1
+    high = v_series(high, _length)
+    low = v_series(low, _length)
+    close = v_series(close, _length)
+
+    if high is None or low is None or close is None:
+        return
+
+    scalar = v_scalar(scalar, 100)
+    mamode = v_mamode(mamode, "ema")
+    mode_tal = v_talib(talib)
+    prenan = v_bool(prenan, False)
+    drift = v_drift(drift)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import NATR
         natr = NATR(high, low, close, length)
     else:
-        natr = scalar / close
-        natr *= atr(high=high, low=low, close=close, length=length, mamode=mamode, drift=drift, offset=offset, **kwargs)
+        natr = (scalar / close) * \
+        atr(
+            high=high, low=low, close=close, length=length,
+            mamode=mamode, drift=drift, talib=mode_tal,
+            prenan=prenan, offset=offset, **kwargs
+        )
 
     # Offset
     if offset != 0:
         natr = natr.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         natr.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        natr.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     natr.name = f"NATR_{length}"
     natr.category = "volatility"
 
     return natr
-
-
-natr.__doc__ = \
-"""Normalized Average True Range (NATR)
-
-Normalized Average True Range attempt to normalize the average true range.
-
-Sources:
-    https://www.tradingtechnologies.com/help/x-study/technical-indicator-definitions/normalized-average-true-range-natr/
-
-Calculation:
-    Default Inputs:
-        length=20
-    ATR = Average True Range
-    NATR = (100 / close) * ATR(high, low, close)
-
-Args:
-    high (pd.Series): Series of 'high's
-    low (pd.Series): Series of 'low's
-    close (pd.Series): Series of 'close's
-    length (int): The short period. Default: 20
-    scalar (float): How much to magnify. Default: 100
-    mamode (str): See ```help(ta.ma)```. Default: 'ema'
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature
-"""

@@ -1,348 +1,432 @@
-from .config import sample_data
-from .context import pandas_ta
-
-from unittest import skip, TestCase
-from unittest.mock import patch
+# -*- coding: utf-8 -*-
+from sys import platform as sys_platform
 
 import numpy as np
-import numpy.testing as npt
 from pandas import DataFrame, Series
-from pandas.api.types import is_datetime64_ns_dtype, is_datetime64tz_dtype
+from pandas.api.types import is_datetime64_ns_dtype
+from pytest import mark, param
+
+import pandas_ta as ta
 
 
-data = {
+
+CROSS_E1 = {
     "zero": [0, 0],
     "a": [0, 1],
     "b": [1, 0],
     "c": [1, 1],
     "crossed": [0, 1],
 }
+crosseddf = DataFrame(CROSS_E1)
 
 
-class TestUtilities(TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        cls.data = sample_data
-
-    @classmethod
-    def tearDownClass(cls):
-        del cls.data
-
-    def setUp(self):
-        self.crosseddf = DataFrame(data)
-        self.utils = pandas_ta.utils
-
-    def tearDown(self):
-        del self.crosseddf
-        del self.utils
-
-    def test__add_prefix_suffix(self):
-        result = self.data.ta.hl2(append=False, prefix="pre")
-        self.assertEqual(result.name, "pre_HL2")
-
-        result = self.data.ta.hl2(append=False, suffix="suf")
-        self.assertEqual(result.name, "HL2_suf")
-
-        result = self.data.ta.hl2(append=False, prefix="pre", suffix="suf")
-        self.assertEqual(result.name, "pre_HL2_suf")
-
-        result = self.data.ta.hl2(append=False, prefix=1, suffix=2)
-        self.assertEqual(result.name, "1_HL2_2")
+def test_above():
+    result = ta.utils.above(crosseddf["a"], crosseddf["zero"])
+    assert isinstance(result, Series)
+    assert result.name == "a_A_zero"
+    np.testing.assert_array_equal(result, crosseddf["c"])
 
-        result = self.data.ta.macd(append=False, prefix="pre", suffix="suf")
-        for col in result.columns:
-            self.assertTrue(col.startswith("pre_") and col.endswith("_suf"))
+    result = ta.utils.above(crosseddf["zero"], crosseddf["a"])
+    assert isinstance(result, Series)
+    assert result.name == "zero_A_a"
+    np.testing.assert_array_equal(result, crosseddf["b"])
 
-    @skip
-    def test__above_below(self):
-        result = self.utils._above_below(self.crosseddf["a"], self.crosseddf["zero"], above=True)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "a_A_zero")
-        npt.assert_array_equal(result, self.crosseddf["c"])
-
-        result = self.utils._above_below(self.crosseddf["a"], self.crosseddf["zero"], above=False)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "a_B_zero")
-        npt.assert_array_equal(result, self.crosseddf["b"])
 
-        result = self.utils._above_below(self.crosseddf["c"], self.crosseddf["zero"], above=True)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "c_A_zero")
-        npt.assert_array_equal(result, self.crosseddf["c"])
 
-        result = self.utils._above_below(self.crosseddf["c"], self.crosseddf["zero"], above=False)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "c_B_zero")
-        npt.assert_array_equal(result, self.crosseddf["zero"])
+def test_above_value():
+    result = ta.utils.above_value(crosseddf["a"], 0)
+    assert isinstance(result, Series)
+    assert result.name == "a_A_0"
+    np.testing.assert_array_equal(result, crosseddf["c"])
 
-    def test_above(self):
-        result = self.utils.above(self.crosseddf["a"], self.crosseddf["zero"])
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "a_A_zero")
-        npt.assert_array_equal(result, self.crosseddf["c"])
+    result = ta.utils.above_value(crosseddf["a"], crosseddf["zero"])
+    assert result is None
 
-        result = self.utils.above(self.crosseddf["zero"], self.crosseddf["a"])
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "zero_A_a")
-        npt.assert_array_equal(result, self.crosseddf["b"])
 
-    def test_above_value(self):
-        result = self.utils.above_value(self.crosseddf["a"], 0)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "a_A_0")
-        npt.assert_array_equal(result, self.crosseddf["c"])
 
-        result = self.utils.above_value(self.crosseddf["a"], self.crosseddf["zero"])
-        self.assertIsNone(result)
+def test_add_df_prefix(df):
+    result = df.ta.hl2(prefix="pre")
+    assert result.name == "pre_HL2"
 
-    def test_below(self):
-        result = self.utils.below(self.crosseddf["zero"], self.crosseddf["a"])
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "zero_B_a")
-        npt.assert_array_equal(result, self.crosseddf["c"])
+    result = df.ta.hl2(suffix="suf")
+    assert result.name == "HL2_suf"
 
-        result = self.utils.below(self.crosseddf["zero"], self.crosseddf["a"])
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "zero_B_a")
-        npt.assert_array_equal(result, self.crosseddf["c"])
+    result = df.ta.hl2(prefix="pre", suffix="suf")
+    assert result.name == "pre_HL2_suf"
 
-    def test_below_value(self):
-        result = self.utils.below_value(self.crosseddf["a"], 0)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "a_B_0")
-        npt.assert_array_equal(result, self.crosseddf["b"])
+    result = df.ta.hl2(prefix=1, suffix=2)
+    assert result.name == "1_HL2_2"
 
-        result = self.utils.below_value(self.crosseddf["a"], self.crosseddf["zero"])
-        self.assertIsNone(result)
+    result = df.ta.macd(prefix="pre", suffix="suf")
+    for col in result.columns:
+        assert col.startswith("pre_") and col.endswith("_suf")
 
-    def test_combination(self):
-        self.assertIsNotNone(self.utils.combination())
 
-        self.assertEqual(self.utils.combination(), 1)
-        self.assertEqual(self.utils.combination(r=-1), 1)
 
-        self.assertEqual(self.utils.combination(n=10, r=4, repetition=False), 210)
-        self.assertEqual(self.utils.combination(n=10, r=4, repetition=True), 715)
+def test_baseline_ohlc(df):
+    result = df.ta.baseline()
+    print(f"\n{result}\n")
+    # assert result.name == "pre_HL2"
 
-    def test_cross_above(self):
-        result = self.utils.cross(self.crosseddf["a"], self.crosseddf["b"])
-        self.assertIsInstance(result, Series)
-        npt.assert_array_equal(result, self.crosseddf["crossed"])
 
-        result = self.utils.cross(self.crosseddf["a"], self.crosseddf["b"], above=True)
-        self.assertIsInstance(result, Series)
-        npt.assert_array_equal(result, self.crosseddf["crossed"])
 
-    def test_cross_below(self):
-        result = self.utils.cross(self.crosseddf["b"], self.crosseddf["a"], above=False)
-        self.assertIsInstance(result, Series)
-        npt.assert_array_equal(result, self.crosseddf["crossed"])
+def test_below():
+    result = ta.utils.below(crosseddf["zero"], crosseddf["a"])
+    assert isinstance(result, Series)
+    assert result.name == "zero_B_a"
+    np.testing.assert_array_equal(result, crosseddf["c"])
 
-    def test_df_dates(self):
-        result = self.utils.df_dates(self.data)
-        self.assertEqual(None, result)
+    result = ta.utils.below(crosseddf["zero"], crosseddf["a"])
+    assert isinstance(result, Series)
+    assert result.name == "zero_B_a"
+    np.testing.assert_array_equal(result, crosseddf["c"])
 
-        result = self.utils.df_dates(self.data, "1999-11-01")
-        self.assertEqual(1, result.shape[0])
 
-        result = self.utils.df_dates(self.data, ["1999-11-01", "2020-08-15", "2020-08-24", "2020-08-25", "2020-08-26", "2020-08-27"])
-        self.assertEqual(5, result.shape[0])
 
-    @skip
-    def test_df_month_to_date(self):
-        result = self.utils.df_month_to_date(self.data)
+def test_below_value():
+    result = ta.utils.below_value(crosseddf["a"], 0)
+    assert isinstance(result, Series)
+    assert result.name == "a_B_0"
+    np.testing.assert_array_equal(result, crosseddf["b"])
 
-    @skip
-    def test_df_quarter_to_date(self):
-        result = self.utils.df_quarter_to_date(self.data)
+    result = ta.utils.below_value(crosseddf["a"], crosseddf["zero"])
+    assert result is None
 
-    @skip
-    def test_df_year_to_date(self):
-        result = self.utils.df_year_to_date(self.data)
 
-    def test_fibonacci(self):
-        self.assertIs(type(self.utils.fibonacci(zero=True, weighted=False)), np.ndarray)
 
-        npt.assert_array_equal(self.utils.fibonacci(zero=True), np.array([0, 1, 1]))
-        npt.assert_array_equal(self.utils.fibonacci(zero=False), np.array([1, 1]))
+def test_combination():
+    assert ta.utils.combination() != None
 
-        npt.assert_array_equal(self.utils.fibonacci(n=0, zero=True, weighted=False), np.array([0]))
-        npt.assert_array_equal(self.utils.fibonacci(n=0, zero=False, weighted=False), np.array([1]))
+    assert ta.utils.combination() == 1
+    assert ta.utils.combination(r=-1) == 1
 
-        npt.assert_array_equal(self.utils.fibonacci(n=5, zero=True, weighted=False), np.array([0, 1, 1, 2, 3, 5]))
-        npt.assert_array_equal(self.utils.fibonacci(n=5, zero=False, weighted=False), np.array([1, 1, 2, 3, 5]))
+    assert ta.utils.combination(n=10, r=4, repetition=False) == 210
+    assert ta.utils.combination(n=10, r=4, repetition=True) == 715
 
-    def test_fibonacci_weighted(self):
-        self.assertIs(type(self.utils.fibonacci(zero=True, weighted=True)), np.ndarray)
-        npt.assert_array_equal(self.utils.fibonacci(n=0, zero=True, weighted=True), np.array([0]))
-        npt.assert_array_equal(self.utils.fibonacci(n=0, zero=False, weighted=True), np.array([1]))
 
-        npt.assert_allclose(self.utils.fibonacci(n=5, zero=True, weighted=True), np.array([0, 1 / 12, 1 / 12, 1 / 6, 1 / 4, 5 / 12]))
-        npt.assert_allclose(self.utils.fibonacci(n=5, zero=False, weighted=True), np.array([1 / 12, 1 / 12, 1 / 6, 1 / 4, 5 / 12]))
 
+def test_cross_above():
+    result = ta.utils.cross(crosseddf["a"], crosseddf["b"])
+    assert isinstance(result, Series)
+    np.testing.assert_array_equal(result, crosseddf["crossed"])
 
-    def test_geometric_mean(self):
-        returns = pandas_ta.percent_return(self.data.close)
-        result = self.utils.geometric_mean(returns)
-        self.assertIsInstance(result, float)
-
-        result = self.utils.geometric_mean(Series([12, 14, 11, 8]))
-        self.assertIsInstance(result, float)
-
-        result = self.utils.geometric_mean(Series([100, 50, 0, 25, 0, 60]))
-        self.assertIsInstance(result, float)
-
-        series = Series([0, 1, 2, 3])
-        result = self.utils.geometric_mean(series)
-        self.assertIsInstance(result, float)
-
-        result = self.utils.geometric_mean(-series)
-        self.assertIsInstance(result, int)
-        self.assertAlmostEqual(result, 0)
-
-    def test_get_time(self):
-        result = self.utils.get_time(to_string=True)
-        self.assertIsInstance(result, str)
-
-        result = self.utils.get_time("NZSX", to_string=True)
-        self.assertTrue("NZSX" in result)
-        self.assertIsInstance(result, str)
-
-        result = self.utils.get_time("SSE", to_string=True)
-        self.assertIsInstance(result, str)
-        self.assertTrue("SSE" in result)
-
-    def test_linear_regression(self):
-        x = Series([1, 2, 3, 4, 5])
-        y = Series([1.8, 2.1, 2.7, 3.2, 4])
-
-        result = self.utils.linear_regression(x, y)
-        self.assertIsInstance(result, dict)
-        self.assertIsInstance(result["a"], float)
-        self.assertIsInstance(result["b"], float)
-        self.assertIsInstance(result["r"], float)
-        self.assertIsInstance(result["t"], float)
-        self.assertIsInstance(result["line"], Series)
-
-    def test_log_geometric_mean(self):
-        returns = pandas_ta.percent_return(self.data.close)
-        result = self.utils.log_geometric_mean(returns)
-        self.assertIsInstance(result, float)
-
-        result = self.utils.log_geometric_mean(Series([12, 14, 11, 8]))
-        self.assertIsInstance(result, float)
-
-        result = self.utils.log_geometric_mean(Series([100, 50, 0, 25, 0, 60]))
-        self.assertIsInstance(result, float)
-
-        series = Series([0, 1, 2, 3])
-        result = self.utils.log_geometric_mean(series)
-        self.assertIsInstance(result, float)
-
-        result = self.utils.log_geometric_mean(-series)
-        self.assertIsInstance(result, int)
-        self.assertAlmostEqual(result, 0)
-
-    def test_pascals_triangle(self):
-        self.assertIsNone(self.utils.pascals_triangle(inverse=True), None)
-
-        array_1 = np.array([1])
-        npt.assert_array_equal(self.utils.pascals_triangle(), array_1)
-        npt.assert_array_equal(self.utils.pascals_triangle(weighted=True), array_1)
-        npt.assert_array_equal(self.utils.pascals_triangle(weighted=True, inverse=True), np.array([0]))
-
-        array_5 = self.utils.pascals_triangle(n=5)  # or np.array([1, 5, 10, 10, 5, 1])
-        array_5w = array_5 / np.sum(array_5)
-        array_5iw = 1 - array_5w
-        npt.assert_array_equal(self.utils.pascals_triangle(n=-5), array_5)
-        npt.assert_array_equal(self.utils.pascals_triangle(n=-5, weighted=True), array_5w)
-        npt.assert_array_equal(self.utils.pascals_triangle(n=-5, weighted=True, inverse=True), array_5iw)
-
-        npt.assert_array_equal(self.utils.pascals_triangle(n=5), array_5)
-        npt.assert_array_equal(self.utils.pascals_triangle(n=5, weighted=True), array_5w)
-        npt.assert_array_equal(self.utils.pascals_triangle(n=5, weighted=True, inverse=True), array_5iw)
-
-    def test_symmetric_triangle(self):
-        npt.assert_array_equal(self.utils.symmetric_triangle(), np.array([1,1]))
-        npt.assert_array_equal(self.utils.symmetric_triangle(weighted=True), np.array([0.5, 0.5]))
-
-        array_4 = self.utils.symmetric_triangle(n=4)  # or np.array([1, 2, 2, 1])
-        array_4w = array_4 / np.sum(array_4)
-        npt.assert_array_equal(self.utils.symmetric_triangle(n=4), array_4)
-        npt.assert_array_equal(self.utils.symmetric_triangle(n=4, weighted=True), array_4w)
-
-        array_5 = self.utils.symmetric_triangle(n=5)  # or np.array([1, 2, 3, 2, 1])
-        array_5w = array_5 / np.sum(array_5)
-        npt.assert_array_equal(self.utils.symmetric_triangle(n=5), array_5)
-        npt.assert_array_equal(self.utils.symmetric_triangle(n=5, weighted=True), array_5w)
-
-    def test_tal_ma(self):
-        self.assertEqual(self.utils.tal_ma("sma"), 0)
-        self.assertEqual(self.utils.tal_ma("Sma"), 0)
-        self.assertEqual(self.utils.tal_ma("ema"), 1)
-        self.assertEqual(self.utils.tal_ma("wma"), 2)
-        self.assertEqual(self.utils.tal_ma("dema"), 3)
-        self.assertEqual(self.utils.tal_ma("tema"), 4)
-        self.assertEqual(self.utils.tal_ma("trima"), 5)
-        self.assertEqual(self.utils.tal_ma("kama"), 6)
-        self.assertEqual(self.utils.tal_ma("mama"), 7)
-        self.assertEqual(self.utils.tal_ma("t3"), 8)
-
-    def test_zero(self):
-        self.assertEqual(self.utils.zero(-0.0000000000000001), 0)
-        self.assertEqual(self.utils.zero(0), 0)
-        self.assertEqual(self.utils.zero(0.0), 0)
-        self.assertEqual(self.utils.zero(0.0000000000000001), 0)
-
-        self.assertNotEqual(self.utils.zero(-0.000000000000001), 0)
-        self.assertNotEqual(self.utils.zero(0.000000000000001), 0)
-        self.assertNotEqual(self.utils.zero(1), 0)
-
-    def test_get_drift(self):
-        for s in [0, None, "", [], {}]:
-            self.assertIsInstance(self.utils.get_drift(s), int)
-
-        self.assertEqual(self.utils.get_drift(0), 1)
-        self.assertEqual(self.utils.get_drift(1.1), 1)
-        self.assertEqual(self.utils.get_drift(-1.1), 1)
-
-    def test_get_offset(self):
-        for s in [0, None, "", [], {}]:
-            self.assertIsInstance(self.utils.get_offset(s), int)
-
-        self.assertEqual(self.utils.get_offset(0), 0)
-        self.assertEqual(self.utils.get_offset(-1.1), 0)
-        self.assertEqual(self.utils.get_offset(1), 1)
-
-    def test_to_utc(self):
-        result = self.utils.to_utc(self.data.copy())
-        self.assertTrue(is_datetime64_ns_dtype(result.index))
-        self.assertTrue(is_datetime64tz_dtype(result.index))
-
-    def test_total_time(self):
-        result = self.utils.total_time(self.data)
-        self.assertEqual(30.182539682539684, result)
-
-        result = self.utils.total_time(self.data, "months")
-        self.assertEqual(250.05753361606995, result)
-
-        result = self.utils.total_time(self.data, "weeks")
-        self.assertEqual(1086.5714285714287, result)
-
-        result = self.utils.total_time(self.data, "days")
-        self.assertEqual(7606, result)
-
-        result = self.utils.total_time(self.data, "hours")
-        self.assertEqual(182544, result)
-
-        result = self.utils.total_time(self.data, "minutes")
-        self.assertEqual(10952640.0, result)
-
-        result = self.utils.total_time(self.data, "seconds")
-        self.assertEqual(657158400.0, result)
-
-    def test_version(self):
-        result = pandas_ta.version
-        self.assertIsInstance(result, str)
-        print(f"\nPandas TA v{result}")
+    result = ta.utils.cross(crosseddf["a"], crosseddf["b"], above=True)
+    assert isinstance(result, Series)
+    np.testing.assert_array_equal(result, crosseddf["crossed"])
+
+    result = ta.utils.cross(crosseddf["a"], crosseddf["b"], equal=False)
+    assert isinstance(result, Series)
+    np.testing.assert_array_equal(result, crosseddf["crossed"])
+
+
+
+def test_cross_below():
+    result = ta.utils.cross(crosseddf["b"], crosseddf["a"], above=False)
+    assert isinstance(result, Series)
+    np.testing.assert_array_equal(result, crosseddf["crossed"])
+
+    result = ta.utils.cross(crosseddf["b"], crosseddf["a"], above=False, equal=False)
+    assert isinstance(result, Series)
+    np.testing.assert_array_equal(result, crosseddf["crossed"])
+
+    # result = ta.utils.cross(crosseddf["a"], crosseddf["b"], above=False)
+    # assert result[0] == 0
+
+
+
+def test_cube(df):
+    result = ta.cube(Series([100, 50, 0, 25, 0, 60]))
+    assert result.name == "CUBE_3.0_-1"
+
+
+
+def test_datetime_ordered(df):
+    # Test if datetime64 index and ordered
+    # result = df.ta.datetime_ordered()
+    # assert result is True
+    assert df.ta.datetime_ordered() is True
+
+    # Test if not ordered
+    original = df.copy()
+    original.ta.reverse()
+    result = original.ta.datetime_ordered()
+    assert result is False
+
+    # Test a non-datetime64 index
+    original = df.copy()
+    original.reset_index(inplace=True)
+    result = original.ta.datetime_ordered()
+    assert result is False
+
+
+
+def test_df_dates(df):
+    result = ta.utils.df_dates(df)
+    assert result is None
+
+
+
+def test_fibonacci():
+    np.testing.assert_array_equal(ta.utils.fibonacci(0, False), np.array([1, 1]))
+    np.testing.assert_array_equal(ta.utils.fibonacci(5, False), np.array([1, 1, 2, 3, 5]))
+
+    assert isinstance(ta.utils.fibonacci(2, False), np.ndarray)
+
+
+
+def test_fibonacci_weighted():
+    np.testing.assert_array_equal(ta.utils.fibonacci(0, True), np.array([0.5, 0.5]))
+    np.testing.assert_allclose(ta.utils.fibonacci(5, True), np.array([1 / 12, 1 / 12, 1 / 6, 1 / 4, 5 / 12]))
+
+    assert isinstance(ta.utils.fibonacci(2, True), np.ndarray)
+
+
+
+def test_geometric_mean(df):
+    returns = ta.percent_return(df.close)
+    result = ta.utils.geometric_mean(returns)
+    assert isinstance(result, (float, int))
+
+    result = ta.utils.geometric_mean(Series([12, 14, 11, 8]))
+    assert isinstance(result, float)
+
+    result = ta.utils.geometric_mean(Series([100, 50, 0, 25, 0, 60]))
+    assert isinstance(result, float)
+
+    series = Series([0, 1, 2, 3])
+    result = ta.utils.geometric_mean(series)
+    assert isinstance(result, float)
+
+    result = ta.utils.geometric_mean(-series)
+    assert isinstance(result, int)
+    assert result == 0
+
+
+
+def test_ifisher():
+    result = ta.ifisher(Series([1, 2, 3, 4, 5, 6, 7, 4, 2, 1, 3]))
+    assert result.name == "INVFISHER_1.0"
+
+
+
+# def test_linear_regression():
+#     x = Series([1, 2, 3, 4, 5])
+#     y = Series([1.8, 2.1, 2.7, 3.2, 4])
+
+#     result = ta.utils.linear_regression(x, y)
+#     assert isinstance(result, dict)
+#     assert isinstance(result["a"], float)
+#     assert isinstance(result["b"], float)
+#     assert isinstance(result["r"], float)
+#     assert isinstance(result["t"], float)
+#     assert isinstance(result["line"], Series)
+
+
+
+def test_log_geometric_mean(df):
+    returns = ta.percent_return(df.close)
+    result = ta.utils.log_geometric_mean(returns)
+    assert isinstance(result, float)
+
+    result = ta.utils.log_geometric_mean(Series([12, 14, 11, 8]))
+    assert isinstance(result, float)
+
+    result = ta.utils.log_geometric_mean(Series([100, 50, 0, 25, 0, 60]))
+    assert isinstance(result, float)
+
+    series = Series([0, 1, 2, 3])
+    result = ta.utils.log_geometric_mean(series)
+    assert isinstance(result, float)
+
+    result = ta.utils.log_geometric_mean(-series)
+    assert isinstance(result, int)
+    assert result == 0
+
+
+
+def test_reverse(df):
+    original = df.copy()
+    df.ta.reverse()
+
+    # Check if first and last time are reversed
+    assert df.index[-1] == original.index[0]
+    assert df.index[0] == original.index[-1]
+
+
+
+def test_pascals_triangle():
+    assert ta.utils.pascals_triangle(inverse=True) is None
+
+    array = np.array([1])
+    np.testing.assert_array_equal(ta.utils.pascals_triangle(), array)
+    np.testing.assert_array_equal(ta.utils.pascals_triangle(weighted=True), array)
+    np.testing.assert_array_equal(ta.utils.pascals_triangle(weighted=True, inverse=True), np.array([0]))
+
+
+
+@mark.parametrize("value", [-5, -1, 0, 1, 5])
+def test_pascals_triangle_n(value):
+    array = ta.utils.pascals_triangle(n=value)
+    array_w = array / np.sum(array)
+    array_iw = 1 - array_w
+    np.testing.assert_array_equal(ta.utils.pascals_triangle(n=value), array)
+    np.testing.assert_array_equal(ta.utils.pascals_triangle(n=value, weighted=True), array_w)
+    np.testing.assert_array_equal(ta.utils.pascals_triangle(n=value, weighted=True, inverse=True), array_iw)
+
+
+
+@mark.parametrize("value", [param(None, marks=mark.xfail), "NYSE", "NZSX", "SSE"])
+def test_get_time_(value):
+    print(f"{value=}")
+    result = ta.utils.get_time(value, to_string=True)
+    assert isinstance(result, str)
+    assert value in result
+
+
+
+@mark.parametrize("array,degree,result", [
+    ([1], 1, 1), ([1, 1], 1, 2), ([1, 0, -1], 1, 0),
+    ([1, 0, 1], 1, 2), ([1, 1, 1], 1, 3)
+])
+def test_hpoly(array, degree, result):
+    assert ta.utils.hpoly(array, degree) == result
+
+
+
+def test_remap(df):
+    result = ta.remap(Series([100, 50, 0, 25, 0, 60]))
+    assert result.name == "REMAP_0.0_100.0_-1.0_1.0"
+
+
+def test_signals(df):
+    _ = df.ta.er(signal_indicators=True)
+    assert _.shape[1] > 0
+
+    _ = df.ta.macd(signal_indicators=True)
+    assert _.shape[1] > 0
+
+    _ = df.ta.rsi(signal_indicators=True)
+    assert _.shape[1] > 0
+
+    _ = df.ta.rsx(signal_indicators=True)
+    assert _.shape[1] > 0
+
+
+
+def test_symmetric_triangle():
+    np.testing.assert_array_equal(ta.utils.symmetric_triangle(), np.array([1,1]))
+    np.testing.assert_array_equal(ta.utils.symmetric_triangle(weighted=True), np.array([0.5, 0.5]))
+
+
+
+@mark.parametrize("value", [2, 3, 10])
+def test_symmetric_triangle_n(value):
+    array = ta.utils.symmetric_triangle(n=value)
+    array_w = array / np.sum(array)
+    np.testing.assert_array_equal(ta.utils.symmetric_triangle(n=value), array)
+    np.testing.assert_array_equal(ta.utils.symmetric_triangle(n=value, weighted=True), array_w)
+
+
+
+@mark.parametrize("value,result", [
+    ("sma", 0), ("Sma", 0), ("ema", 1), ("wma", 2), ("dema", 3), ("tema", 4),
+    ("trima", 5), ("kama", 6), ("mama", 7), ("t3", 8)
+])
+def test_tal_ma(value, result):
+    assert ta.utils.tal_ma(value) == result
+
+
+
+def test_to_utc(df):
+    result = ta.utils.to_utc(df)
+    assert is_datetime64_ns_dtype(result.index)
+    # assert is_datetime64tz_dtype(result.index) # Depreciation Warning but no mention in 2.2 docs
+
+
+
+def test_version():
+    assert isinstance(ta.version, str)
+    print(f"{ta.version=}")
+
+
+
+def test_v_drift_type():
+    _instances = [0, None, "", [], {}, np.int8(5), np.int16(5), np.int32(5), np.int64(5)]
+    for _ in _instances:
+        assert isinstance(ta.utils.v_drift(_), int)
+
+
+
+@mark.parametrize("value,result", [
+    (-1.1, 1), (0, 1), (1.1, 1), (5, 5),
+    (np.int64(-1.1), -1), (np.int64(0), 1),
+    (np.int64(1.1), 1), (np.int64(5), 5)
+])
+def test_v_drift_value(value, result):
+    assert ta.utils.v_drift(value) == result
+
+
+
+@mark.parametrize("value", [None, "", [], {}, -1.1, -1, 0.0, 0, 0.1, 1.0, 1])
+@mark.parametrize("strict", [False, True])
+def test_v_lowerbound_type(value, strict):
+    assert isinstance(ta.v_lowerbound(value, strict=strict), (float, int))
+
+
+
+@mark.parametrize("value,result", [
+    (-1.1, 0), (-1, 0), (0.0, 0), (0, 0), (0.1, 0.1), (1.0, 1.0), (1, 1),
+])
+def test_v_lowerbound_value_strict(value, result):
+    assert ta.utils.v_lowerbound(value) == result
+
+
+
+@mark.parametrize("value,result", [
+    (-1.1, 0), (-1, 0), (0.0, 0), (0, 0), (0.1, 0.1), (1.0, 1), (1, 1),
+])
+def test_v_lowerbound_value_strict_false(value, result):
+    assert ta.utils.v_lowerbound(value, strict=False) == result
+
+
+
+@mark.parametrize("value", [
+    0, None, "", [], {}, np.int8(5), np.int16(5), np.int32(5), np.int64(5)
+])
+def test_v_offset_types(value):
+    assert isinstance(ta.utils.v_offset(value), int)
+
+
+
+@mark.parametrize("value,result", [
+    (None, 0), (-1.1, 0), (-1, -1), (0, 0), (1.1, 0), (1, 1), (2, 2),
+    (np.int64(-1), -1), (np.int64(0), 0), (np.int64(1.1), 1),
+    (np.int64(1), 1), (np.int64(2), 2), (np.int64(-1.1), -1),
+    (np.int64(1.1), 1),
+])
+def test_v_offset_value(value,result):
+    assert ta.utils.v_offset(value) == result
+
+
+
+@mark.parametrize("value", [None, "", [], {}, -1.1, -1, 0.0, 0, 0.1, 1.0, 1])
+@mark.parametrize("strict", [False, True])
+def test_v_upperbound_value_strict(value, strict):
+    assert isinstance(ta.utils.v_upperbound(value, strict=strict), (float, int))
+
+
+
+@mark.parametrize("value,result", [
+    (-0.0000000000000001, 0), (0.0000000000000001, 0), (0, 0), (0.0, 0),
+    param(-0.000000000000001, 0, marks=mark.xfail), param(1, 0, marks=mark.xfail)
+])
+def test_zero(value, result):
+    assert ta.utils.zero(value) == result
+
+
+
+@mark.parametrize("talib", [False, True])
+@mark.parametrize("verbose", [False, True])
+def test_indicator_speed_talib_verbose(df, talib, verbose):
+    resultdf = ta.speed_test(df, talib=talib, verbose=verbose)
+    assert isinstance(resultdf, DataFrame)

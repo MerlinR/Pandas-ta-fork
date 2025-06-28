@@ -1,100 +1,107 @@
 # -*- coding: utf-8 -*-
+from numpy import isnan, nan
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.ma import ma
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    v_bool,
+    v_drift,
+    v_mamode,
+    v_offset,
+    v_pos_default,
+    v_series,
+    v_talib
+)
 from .true_range import true_range
-from pandas_ta import Imports
-from pandas_ta.overlap import ma
-from pandas_ta.utils import get_drift, get_offset, verify_series
 
 
-def atr(high, low, close, length=None, mamode=None, talib=None, drift=None, offset=None, **kwargs):
-    """Indicator: Average True Range (ATR)"""
-    # Validate arguments
-    length = int(length) if length and length > 0 else 14
-    mamode = mamode.lower() if mamode and isinstance(mamode, str) else "rma"
-    high = verify_series(high, length)
-    low = verify_series(low, length)
-    close = verify_series(close, length)
-    drift = get_drift(drift)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    if high is None or low is None or close is None: return
+def atr(
+    high: Series, low: Series, close: Series, length: Int = None,
+    mamode: str = None, talib: bool = None,
+    prenan: bool = None, drift: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Average True Range
 
-    # Calculate Result
+    This indicator attempts to quantify volatility with a focus on gaps or
+    limit moves.
+
+    Sources:
+        * [tradingview](https://www.tradingview.com/wiki/Average_True_Range_(ATR))
+
+    Parameters:
+        high (Series): ```high``` Series
+        low (Series): ```low``` Series
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```14```
+        mamode (str): See ```help(ta.ma)```. Default: ```"rma"```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        prenan (bool): Sets initial values to ```np.nan``` based
+            on ```drift```. Default: ```False```
+        drift (int): Difference amount. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        percent (bool): Return as percent. Default: ```False```
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 14)
+    _length = length + 1
+    high = v_series(high, _length)
+    low = v_series(low, _length)
+    close = v_series(close, _length)
+
+    if high is None or low is None or close is None:
+        return
+
+    mamode = v_mamode(mamode, "rma")
+    mode_tal = v_talib(talib)
+    prenan = v_bool(prenan, False)
+    drift = v_drift(drift)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import ATR
         atr = ATR(high, low, close, length)
     else:
-        tr = true_range(high=high, low=low, close=close, drift=drift)
-        atr = ma(mamode, tr, length=length)
+        tr = true_range(
+            high=high, low=low, close=close,
+            talib=mode_tal, prenan=prenan, drift=drift
+        )
+        if all(isnan(tr)):
+            return  # Emergency Break
 
-    percentage = kwargs.pop("percent", False)
-    if percentage:
+        presma = kwargs.pop("presma", True)
+        if presma:
+            sma_nth = tr[0:length].mean()
+            tr[:length - 1] = nan
+            tr.iloc[length - 1] = sma_nth
+        atr = ma(mamode, tr, length=length, talib=mode_tal)
+
+    if all(isnan(atr)):
+        return  # Emergency Break
+
+    percent = kwargs.pop("percent", False)
+    if percent:
         atr *= 100 / close
 
     # Offset
     if offset != 0:
         atr = atr.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         atr.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        atr.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
-    atr.name = f"ATR{mamode[0]}_{length}{'p' if percentage else ''}"
+    # Name and Category
+    atr.name = f"ATR{mamode[0]}{'p' if percent else ''}_{length}"
     atr.category = "volatility"
 
     return atr
-
-
-atr.__doc__ = \
-"""Average True Range (ATR)
-
-Averge True Range is used to measure volatility, especially volatility caused by
-gaps or limit moves.
-
-Sources:
-    https://www.tradingview.com/wiki/Average_True_Range_(ATR)
-
-Calculation:
-    Default Inputs:
-        length=14, drift=1, percent=False
-    EMA = Exponential Moving Average
-    SMA = Simple Moving Average
-    WMA = Weighted Moving Average
-    RMA = WildeR's Moving Average
-    TR = True Range
-
-    tr = TR(high, low, close, drift)
-    if 'ema':
-        ATR = EMA(tr, length)
-    elif 'sma':
-        ATR = SMA(tr, length)
-    elif 'wma':
-        ATR = WMA(tr, length)
-    else:
-        ATR = RMA(tr, length)
-
-    if percent:
-        ATR *= 100 / close
-
-Args:
-    high (pd.Series): Series of 'high's
-    low (pd.Series): Series of 'low's
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 14
-    mamode (str): See ```help(ta.ma)```. Default: 'rma'
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    drift (int): The difference period. Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    percent (bool, optional): Return as percentage. Default: False
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

@@ -1,53 +1,58 @@
 # -*- coding: utf-8 -*-
-from pandas_ta.utils import verify_series
-from numpy import nan as npNaN
+from numpy import nan
 from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.utils import v_drift, v_series
 
 
-def pvr(close, volume):
-    """ Indicator: Price Volume Rank"""
-    # Validate arguments
-    close = verify_series(close)
-    volume = verify_series(volume)
 
-    # Calculate Result
-    close_diff = close.diff().fillna(0)
-    volume_diff = volume.diff().fillna(0)
-    pvr_ = Series(npNaN, index=close.index)
-    pvr_.loc[(close_diff >= 0) & (volume_diff >= 0)] = 1
-    pvr_.loc[(close_diff >= 0) & (volume_diff < 0)]  = 2
-    pvr_.loc[(close_diff < 0) & (volume_diff >= 0)]  = 3
-    pvr_.loc[(close_diff < 0) & (volume_diff < 0)]   = 4
+def pvr(
+    close: Series, volume: Series,
+    drift: Int = None, **kwargs: DictLike
+) -> Series:
+    """Price Volume Rank
 
-    # Name and Categorize it
-    pvr_.name = f"PVR"
-    pvr_.category = "volume"
+    This indicator, by Anthony J. Macek, is a simple rank computation with
+    close and volume values.
 
-    return pvr_
+    Sources:
+        * Anthony J. Macek, June, 1994 issue of Technical Analysis of
+          Stocks & Commodities (TASC) Magazine
+        * [fmlabs](https://www.fmlabs.com/reference/default.htm?url=PVrank.htm)
 
+    Parameters:
+        close (Series): ```close``` Series
+        volume (Series): ```volume``` Series
+        drift (int): Difference amount. Default: ```1```
 
-pvr.__doc__ = \
-"""Price Volume Rank
+    Returns:
+        (Series): 1 column
 
-The Price Volume Rank was developed by Anthony J. Macek and is described in his
-article in the June, 1994 issue of Technical Analysis of Stocks & Commodities
-Magazine. It was developed as a simple indicator that could be calculated even
-without a computer. The basic interpretation is to buy when the PV Rank is below
-2.5 and sell when it is above 2.5.
+    Note: Signals
+        - Buy < 2.5
+        - Sell > 2.5
+    """
+    # Validate
+    drift = v_drift(drift)
+    close = v_series(close, drift)
+    volume = v_series(volume, drift)
 
-Sources:
-    https://www.fmlabs.com/reference/default.htm?url=PVrank.htm
+    if close is None or volume is None:
+        return
 
-Calculation:
-    return 1 if 'close change' >= 0 and 'volume change' >= 0
-    return 2 if 'close change' >= 0 and 'volume change' < 0
-    return 3 if 'close change' < 0 and 'volume change' >= 0
-    return 4 if 'close change' < 0 and 'volume change' < 0
+    # Calculate
+    close_diff = close.diff(drift).fillna(0)
+    volume_diff = volume.diff(drift).fillna(0)
 
-Args:
-    close (pd.Series): Series of 'close's
-    volume (pd.Series): Series of 'volume's
+    pvr = Series(nan, index=close.index)
 
-Returns:
-    pd.Series: New feature generated.
-"""
+    pvr.loc[(close_diff >= 0) & (volume_diff >= 0)] = 1
+    pvr.loc[(close_diff >= 0) & (volume_diff < 0)] = 2
+    pvr.loc[(close_diff < 0) & (volume_diff >= 0)] = 3
+    pvr.loc[(close_diff < 0) & (volume_diff < 0)] = 4
+
+    # Name and Category
+    pvr.name = f"PVR"
+    pvr.category = "volume"
+
+    return pvr

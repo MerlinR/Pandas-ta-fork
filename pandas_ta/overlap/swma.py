@@ -1,73 +1,68 @@
 # -*- coding: utf-8 -*-
-from pandas_ta.utils import get_offset, symmetric_triangle, verify_series, weights
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.utils import (
+    symmetric_triangle,
+    v_offset,
+    v_pos_default,
+    v_series,
+    weights
+)
 
 
-def swma(close, length=None, asc=None, offset=None, **kwargs):
-    """Indicator: Symmetric Weighted Moving Average (SWMA)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 10
-    # min_periods = int(kwargs["min_periods"]) if "min_periods" in kwargs and kwargs["min_periods"] is not None else length
-    asc = asc if asc else True
-    close = verify_series(close, length)
-    offset = get_offset(offset)
 
-    if close is None: return
+def swma(
+    close: Series, length: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Symmetric Weighted Moving Average
 
-    # Calculate Result
+    This indicator is based on a Symmetric Weighted Moving Average where
+    weights are based on a symmetric triangle.
+
+    Source:
+        * [tradingview](https://www.tradingview.com/study-script-reference/#fun_swma)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```10```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+
+    Note:
+        * ```n=3``` -> ```[1, 2, 1]```
+        * ```n=4``` -> ```[1, 2, 2, 1]```
+        * etc...
+    """
+    # Validate
+    length = v_pos_default(length, 10)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    offset = v_offset(offset)
+
+    # Calculate
     triangle = symmetric_triangle(length, weighted=True)
-    swma = close.rolling(length, min_periods=length).apply(weights(triangle), raw=True)
-    # swma = close.rolling(length).apply(weights(triangle), raw=True)
+    swma = close.rolling(length, min_periods=length) \
+        .apply(weights(triangle), raw=True)
 
     # Offset
     if offset != 0:
         swma = swma.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         swma.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        swma.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
+    # Name and Category
     swma.name = f"SWMA_{length}"
     swma.category = "overlap"
 
     return swma
-
-
-swma.__doc__ = \
-"""Symmetric Weighted Moving Average (SWMA)
-
-Symmetric Weighted Moving Average where weights are based on a symmetric
-triangle.  For example: n=3 -> [1, 2, 1], n=4 -> [1, 2, 2, 1], etc...
-This moving average has variable length in contrast to TradingView's fixed
-length of 4.
-
-Source:
-    https://www.tradingview.com/study-script-reference/#fun_swma
-
-Calculation:
-    Default Inputs:
-        length=10
-
-    def weights(w):
-        def _compute(x):
-            return np.dot(w * x)
-        return _compute
-
-    triangle = utils.symmetric_triangle(length - 1)
-    SWMA = close.rolling(length)_.apply(weights(triangle), raw=True)
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 10
-    asc (bool): Recent values weigh more. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

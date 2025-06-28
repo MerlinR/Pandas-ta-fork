@@ -1,78 +1,75 @@
 # -*- coding: utf-8 -*-
-from pandas_ta import Imports
-from pandas_ta.overlap import ma
-from pandas_ta.utils import get_offset, tal_ma, verify_series
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.ma import ma
+from pandas_ta.maps import Imports
+from pandas_ta.utils import tal_ma, v_mamode, v_offset
+from pandas_ta.utils import v_pos_default, v_series, v_talib
 
 
-def apo(close, fast=None, slow=None, mamode=None, talib=None, offset=None, **kwargs):
-    """Indicator: Absolute Price Oscillator (APO)"""
-    # Validate Arguments
-    fast = int(fast) if fast and fast > 0 else 12
-    slow = int(slow) if slow and slow > 0 else 26
+
+def apo(
+    close: Series, fast: Int = None, slow: Int = None,
+    mamode: str = None, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Absolute Price Oscillator
+
+    This indicator attempts to quantify momentum.
+
+    Sources:
+        * [tradingtechnologies](https://www.tradingtechnologies.com/xtrader-help/x-study/technical-indicator-definitions/absolute-price-oscillator-apo/)
+
+    Parameters:
+        close (Series): ```close``` Series
+        fast (int): Fast period. Default: ```12```
+        slow (int): Slow period. Default: ```26```
+        mamode (str): See ```help(ta.ma)```. Default: ```"sma"```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+
+    Note:
+        * Simply the difference of two different EMAs.
+        * APO and MACD lines are equivalent.
+    """
+    # Validate
+    fast = v_pos_default(fast, 12)
+    slow = v_pos_default(slow, 26)
     if slow < fast:
         fast, slow = slow, fast
-    close = verify_series(close, max(fast, slow))
-    mamode = mamode if isinstance(mamode, str) else "sma"
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
+    close = v_series(close, max(fast, slow))
 
-    if close is None: return
+    if close is None:
+        return
 
-    # Calculate Result
+    mamode = v_mamode(mamode, "sma")
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import APO
         apo = APO(close, fast, slow, tal_ma(mamode))
     else:
-        fastma = ma(mamode, close, length=fast)
-        slowma = ma(mamode, close, length=slow)
+        fastma = ma(mamode, close, length=fast, talib=mode_tal)
+        slowma = ma(mamode, close, length=slow, talib=mode_tal)
         apo = fastma - slowma
 
     # Offset
     if offset != 0:
         apo = apo.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         apo.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        apo.fillna(method=kwargs["fill_method"], inplace=True)
-
-    # Name and Categorize it
+    # Name and Category
     apo.name = f"APO_{fast}_{slow}"
     apo.category = "momentum"
 
     return apo
-
-
-apo.__doc__ = \
-"""Absolute Price Oscillator (APO)
-
-The Absolute Price Oscillator is an indicator used to measure a security's
-momentum.  It is simply the difference of two Exponential Moving Averages
-(EMA) of two different periods. Note: APO and MACD lines are equivalent.
-
-Sources:
-    https://www.tradingtechnologies.com/xtrader-help/x-study/technical-indicator-definitions/absolute-price-oscillator-apo/
-
-Calculation:
-    Default Inputs:
-        fast=12, slow=26
-    SMA = Simple Moving Average
-    APO = SMA(close, fast) - SMA(close, slow)
-
-Args:
-    close (pd.Series): Series of 'close's
-    fast (int): The short period. Default: 12
-    slow (int): The long period. Default: 26
-    mamode (str): See ```help(ta.ma)```. Default: 'sma'
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

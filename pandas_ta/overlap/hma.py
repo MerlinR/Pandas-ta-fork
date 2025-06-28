@@ -1,72 +1,72 @@
 # -*- coding: utf-8 -*-
-from numpy import sqrt as npSqrt
+from sys import modules as module_
+from numpy import sqrt
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.utils import v_mamode, v_offset, v_pos_default, v_series
+from .ema import ema
+from .sma import sma
 from .wma import wma
-from pandas_ta.utils import get_offset, verify_series
 
 
-def hma(close, length=None, offset=None, **kwargs):
-    """Indicator: Hull Moving Average (HMA)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 10
-    close = verify_series(close, length)
-    offset = get_offset(offset)
 
-    if close is None: return
+def hma(
+    close: Series, length: Int = None, mamode: str = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Hull Moving Average
 
-    # Calculate Result
+    This indicator, by Alan Hull, attempts to reduce lag compared to
+    classical moving averages.
+
+    Sources:
+        * [Alan Hull](https://alanhull.com/hull-moving-average)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```10```
+        mamode (str): One of: 'ema', 'sma', or 'wma'. Default: ```"wma"```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 10)
+    close = v_series(close, length + 2)
+
+    if close is None:
+        return
+
+    mamode = v_mamode(mamode, "wma")
+    offset = v_offset(offset)
+
+    if mamode not in ["ema", "sma", "wma"]:
+        return
+
+    _ma = getattr(module_[__name__], mamode)
+
+    # Calculate
     half_length = int(length / 2)
-    sqrt_length = int(npSqrt(length))
+    sqrt_length = int(sqrt(length))
 
-    wmaf = wma(close=close, length=half_length)
-    wmas = wma(close=close, length=length)
-    hma = wma(close=2 * wmaf - wmas, length=sqrt_length)
+    maf = _ma(close, length=half_length)
+    mas = _ma(close, length=length)
+    hma = _ma(close=2 * maf - mas, length=sqrt_length)
 
     # Offset
     if offset != 0:
         hma = hma.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         hma.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        hma.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
-    hma.name = f"HMA_{length}"
+    # Name and Category
+    hma.name = f"HMA{"" if mamode == "wma" else mamode[0]}_{length}"
     hma.category = "overlap"
 
     return hma
-
-
-hma.__doc__ = \
-"""Hull Moving Average (HMA)
-
-The Hull Exponential Moving Average attempts to reduce or remove lag in moving
-averages.
-
-Sources:
-    https://alanhull.com/hull-moving-average
-
-Calculation:
-    Default Inputs:
-        length=10
-    WMA = Weighted Moving Average
-    half_length = int(0.5 * length)
-    sqrt_length = int(sqrt(length))
-
-    wmaf = WMA(close, half_length)
-    wmas = WMA(close, length)
-    HMA = WMA(2 * wmaf - wmas, sqrt_length)
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 10
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

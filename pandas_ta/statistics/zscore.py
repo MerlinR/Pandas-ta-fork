@@ -1,20 +1,43 @@
 # -*- coding: utf-8 -*-
+from pandas import Series
+from pandas_ta._typing import DictLike, Int, IntFloat
 from pandas_ta.overlap import sma
-from .stdev import stdev
-from pandas_ta.utils import get_offset, verify_series
+from pandas_ta.statistics import stdev
+from pandas_ta.utils import v_lowerbound, v_offset, v_series
 
 
-def zscore(close, length=None, std=None, offset=None, **kwargs):
-    """Indicator: Z Score"""
-    # Validate Arguments
-    length = int(length) if length and length > 1 else 30
-    std = float(std) if std and std > 1 else 1
-    close = verify_series(close, length)
-    offset = get_offset(offset)
 
-    if close is None: return
+def zscore(
+    close: Series, length: Int = None, std: IntFloat = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Rolling Z Score
 
-    # Calculate Result
+    Calculates a rolling Z Score.
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```30```
+        std (float): Number of deviation standards. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_lowerbound(length, 1, 30)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    std = v_lowerbound(std, 1, 1.0)
+    offset = v_offset(offset)
+
+    # Calculate
     std *= stdev(close=close, length=length, **kwargs)
     mean = sma(close=close, length=length, **kwargs)
     zscore = (close - mean) / std
@@ -23,43 +46,12 @@ def zscore(close, length=None, std=None, offset=None, **kwargs):
     if offset != 0:
         zscore = zscore.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         zscore.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        zscore.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
+    # Name and Category
     zscore.name = f"ZS_{length}"
     zscore.category = "statistics"
 
     return zscore
-
-
-zscore.__doc__ = \
-"""Rolling Z Score
-
-Sources:
-
-Calculation:
-    Default Inputs:
-        length=30, std=1
-    SMA = Simple Moving Average
-    STDEV = Standard Deviation
-    std = std * STDEV(close, length)
-    mean = SMA(close, length)
-    ZSCORE = (close - mean) / std
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 30
-    std (float): It's period. Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

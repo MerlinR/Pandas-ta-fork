@@ -1,99 +1,115 @@
 # -*- coding: utf-8 -*-
-from numpy import cos as npCos
-from numpy import exp as npExp
-from numpy import pi as npPi
-from numpy import sqrt as npSqrt
-from pandas_ta.utils import get_offset, verify_series
+from numpy import copy, cos, exp, zeros_like
+from numba import njit
+from pandas import Series
+from pandas_ta._typing import Array, DictLike, Int, IntFloat
+from pandas_ta.utils import v_bool, v_offset, v_pos_default, v_series
 
 
-def ssf(close, length=None, poles=None, offset=None, **kwargs):
-    """Indicator: Ehler's Super Smoother Filter (SSF)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 10
-    poles = int(poles) if poles in [2, 3] else 2
-    close = verify_series(close, length)
-    offset = get_offset(offset)
 
-    if close is None: return
+# Ehlers's Super Smoother Filter
+# http://traders.com/documentation/feedbk_docs/2014/01/traderstips.html
+@njit(cache=True)
+def nb_ssf(x, n, pi, sqrt2):
+    m, ratio, result = x.size, sqrt2 / n, copy(x)
+    a = exp(-pi * ratio)
+    b = 2 * a * cos(180 * ratio)
+    c = a * a - b + 1
 
-    # Calculate Result
-    m = close.size
-    ssf = close.copy()
+    # result[:2] = x[:2]
+    for i in range(2, m):
+        result[i] = 0.5 * c * (x[i] + x[i - 1]) + b * result[i - 1] \
+            - a * a * result[i - 2]
 
-    if poles == 3:
-        x = npPi / length # x = PI / n
-        a0 = npExp(-x) # e^(-x)
-        b0 = 2 * a0 * npCos(npSqrt(3) * x) # 2e^(-x)*cos(3^(.5) * x)
-        c0 = a0 * a0 # e^(-2x)
+    return result
 
-        c4 = c0 * c0 # e^(-4x)
-        c3 = -c0 * (1 + b0) # -e^(-2x) * (1 + 2e^(-x)*cos(3^(.5) * x))
-        c2 = c0 + b0 # e^(-2x) + 2e^(-x)*cos(3^(.5) * x)
-        c1 = 1 - c2 - c3 - c4
 
-        for i in range(0, m):
-            ssf.iloc[i] = c1 * close.iloc[i] + c2 * ssf.iloc[i - 1] + c3 * ssf.iloc[i - 2] + c4 * ssf.iloc[i - 3]
+# John F. Ehlers's Super Smoother Filter by Everget (2 poles), Tradingview
+# https://www.tradingview.com/script/VdJy0yBJ-Ehlers-Super-Smoother-Filter/
+@njit(cache=True)
+def nb_ssf_everget(x, n, pi, sqrt2):
+    m, arg, result = x.size, pi * sqrt2 / n, copy(x)
+    a = exp(-arg)
+    b = 2 * a * cos(arg)
 
-    else: # poles == 2
-        x = npPi * npSqrt(2) / length # x = PI * 2^(.5) / n
-        a0 = npExp(-x) # e^(-x)
-        a1 = -a0 * a0 # -e^(-2x)
-        b1 = 2 * a0 * npCos(x) # 2e^(-x)*cos(x)
-        c1 = 1 - a1 - b1 # e^(-2x) - 2e^(-x)*cos(x) + 1
+    # result[:2] = x[:2]
+    for i in range(2, m):
+        result[i] = 0.5 * (a * a - b + 1) * (x[i] + x[i - 1]) \
+            + b * result[i - 1] - a * a * result[i - 2]
 
-        for i in range(0, m):
-            ssf.iloc[i] = c1 * close.iloc[i] + b1 * ssf.iloc[i - 1] + a1 * ssf.iloc[i - 2]
+    return result
+
+
+def ssf(
+    close: Series, length: Int = None,
+    everget: bool = None, pi: IntFloat = None, sqrt2: IntFloat = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Ehlers's Super Smoother Filter
+
+    This indicator, by John F. Ehlers's © 2013, is a (Recursive) Digital
+    Filter that attempts to reduce lag and remove aliases. This version
+    has two poles.
+
+    Sources:
+        * [mql5](https://www.mql5.com/en/code/588)
+        * [traders.com](http://traders.com/documentation/feedbk_docs/2014/01/traderstips.html)
+        * [tradingview](https://www.tradingview.com/script/VdJy0yBJ-Ehlers-Super-Smoother-Filter/)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```20```
+        everget (bool): Everget's implementation of ssf that uses pi
+            instead of 180 for the b factor of ssf. Default: ```False```
+        pi (float): The default is Ehlers's truncated value: ```3.14159```.
+            Default: ```3.14159```
+        sqrt2 (float): The default is Ehlers's truncated value: ```1.414```.
+            Default: ```1.414```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+
+    Note:
+        * Everget's calculation on TradingView:
+            ```pi=np.pi```, ```sqrt2=np.sqrt(2)```
+
+    Danger:
+        Possible Data Leak
+    """
+    # Validate
+    length = v_pos_default(length, 20)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    pi = v_pos_default(pi, 3.14159)
+    sqrt2 = v_pos_default(sqrt2, 1.414)
+    everget = v_bool(everget, False)
+    offset = v_offset(offset)
+
+    # Calculate
+    np_close = close.to_numpy()
+    if everget:
+        ssf = nb_ssf_everget(np_close, length, pi, sqrt2)
+    else:
+        ssf = nb_ssf(np_close, length, pi, sqrt2)
+    ssf = Series(ssf, index=close.index)
 
     # Offset
     if offset != 0:
         ssf = ssf.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         ssf.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        ssf.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
-    ssf.name = f"SSF_{length}_{poles}"
+    # Name and Category
+    ssf.name = f"SSF{'e' if everget else ''}_{length}"
     ssf.category = "overlap"
 
     return ssf
-
-
-ssf.__doc__ = \
-"""Ehler's Super Smoother Filter (SSF) © 2013
-
-John F. Ehlers's solution to reduce lag and remove aliasing noise with his
-research in aerospace analog filter design. This indicator comes with two
-versions determined by the keyword poles. By default, it uses two poles but
-there is an option for three poles. Since SSF is a (Resursive) Digital Filter,
-the number of poles determine how many prior recursive SSF bars to include in
-the design of the filter. So two poles uses two prior SSF bars and three poles
-uses three prior SSF bars for their filter calculations.
-
-Sources:
-    http://www.stockspotter.com/files/PredictiveIndicators.pdf
-    https://www.tradingview.com/script/VdJy0yBJ-Ehlers-Super-Smoother-Filter/
-    https://www.mql5.com/en/code/588
-    https://www.mql5.com/en/code/589
-
-Calculation:
-    Default Inputs:
-        length=10, poles=[2, 3]
-
-    See the source code or Sources listed above.
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 10
-    poles (int): The number of poles to use, either 2 or 3. Default: 2
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

@@ -1,19 +1,46 @@
 # -*- coding: utf-8 -*-
-from pandas_ta.overlap import ma
-from pandas_ta.utils import get_offset, verify_series
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.ma import ma
+from pandas_ta.utils import v_mamode, v_offset, v_pos_default, v_series
 
 
-def bias(close, length=None, mamode=None, offset=None, **kwargs):
-    """Indicator: Bias (BIAS)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 26
-    mamode = mamode if isinstance(mamode, str) else "sma"
-    close = verify_series(close, length)
-    offset = get_offset(offset)
 
-    if close is None: return
+def bias(
+    close: Series, length: Int = None, mamode: str = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Bias
 
-    # Calculate Result
+    This indicator computes the Rate of Change between the source and a
+    moving average.
+
+    Sources:
+        * Few internet resources on definitive definition.
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```26```
+        mamode (str): See ```help(ta.ma)```. Default: ```"sma"```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 26)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    mamode = v_mamode(mamode, "sma")
+    offset = v_offset(offset)
+
+    # Calculate
     bma = ma(mamode, close, length=length, **kwargs)
     bias = (close / bma) - 1
 
@@ -21,46 +48,12 @@ def bias(close, length=None, mamode=None, offset=None, **kwargs):
     if offset != 0:
         bias = bias.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         bias.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        bias.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     bias.name = f"BIAS_{bma.name}"
     bias.category = "momentum"
 
     return bias
-
-
-bias.__doc__ = \
-"""Bias (BIAS)
-
-Rate of change between the source and a moving average.
-
-Sources:
-    Few internet resources on definitive definition.
-    Request by Github user homily, issue #46
-
-Calculation:
-    Default Inputs:
-        length=26, MA='sma'
-
-    BIAS = (close - MA(close, length)) / MA(close, length)
-         = (close / MA(close, length)) - 1
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): The period. Default: 26
-    mamode (str): See ```help(ta.ma)```. Default: 'sma'
-    drift (int): The short period. Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

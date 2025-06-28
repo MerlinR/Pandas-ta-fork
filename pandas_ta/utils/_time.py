@@ -1,16 +1,34 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 from time import localtime, perf_counter
-from typing import Tuple
 
-from pandas import DataFrame, Timestamp
+from pandas import DataFrame, Series, Timestamp, to_datetime
+from pandas_ta._typing import Float, MaybeSeriesFrame, Optional, Tuple
+from pandas_ta.maps import EXCHANGE_TZ
 
-from pandas_ta import EXCHANGE_TZ, RATE
+__all__ = [
+    "df_dates",
+    "df_month_to_date",
+    "df_quarter_to_date",
+    "df_year_to_date",
+    "final_time",
+    "get_time",
+    "mtd",
+    "qtd",
+    "to_utc",
+    "total_time",
+    "unix_convert",
+    "ytd",
+]
 
 
-def df_dates(df: DataFrame, dates: Tuple[str, list] = None) -> DataFrame:
+
+def df_dates(
+    df: DataFrame, dates: Tuple[str, list] = None
+) -> MaybeSeriesFrame:
     """Yields the DataFrame with the given dates"""
-    if dates is None: return None
+    if dates is None:
+        return None
     if not isinstance(dates, list):
         dates = [dates]
     return df[df.index.isin(dates)]
@@ -19,7 +37,8 @@ def df_dates(df: DataFrame, dates: Tuple[str, list] = None) -> DataFrame:
 def df_month_to_date(df: DataFrame) -> DataFrame:
     """Yields the Month-to-Date (MTD) DataFrame"""
     in_mtd = df.index >= Timestamp.now().strftime("%Y-%m-01")
-    if any(in_mtd): return df[in_mtd]
+    if any(in_mtd):
+        return df[in_mtd]
     return df
 
 
@@ -28,29 +47,33 @@ def df_quarter_to_date(df: DataFrame) -> DataFrame:
     now = Timestamp.now()
     for m in [1, 4, 7, 10]:
         if now.month <= m:
-                in_qtr = df.index >= datetime(now.year, m, 1).strftime("%Y-%m-01")
-                if any(in_qtr): return df[in_qtr]
+            in_qtr = df.index >= datetime(now.year, m, 1).strftime("%Y-%m-01")
+            if any(in_qtr):
+                return df[in_qtr]
     return df[df.index >= now.strftime("%Y-%m-01")]
 
 
 def df_year_to_date(df: DataFrame) -> DataFrame:
     """Yields the Year-to-Date (YTD) DataFrame"""
     in_ytd = df.index >= Timestamp.now().strftime("%Y-01-01")
-    if any(in_ytd): return df[in_ytd]
+    if any(in_ytd):
+        return df[in_ytd]
     return df
 
 
-def final_time(stime: float) -> str:
-    """Human readable elapsed time. Calculates the final time elasped since
+def final_time(stime: Float) -> str:
+    """Human readable elapsed time. Calculates the final time elapsed since
     stime and returns a string with microseconds and seconds."""
     time_diff = perf_counter() - stime
     return f"{time_diff * 1000:2.4f} ms ({time_diff:2.4f} s)"
 
 
-def get_time(exchange: str = "NYSE", full:bool = True, to_string:bool = False) -> Tuple[None, str]:
+def get_time(
+    exchange: str = "NYSE", full: bool = True, to_string: bool = False
+) -> Optional[str]:
     """Returns Current Time, Day of the Year and Percentage, and the current
     time of the selected Exchange."""
-    tz = EXCHANGE_TZ["NYSE"] # Default is NYSE (Eastern Time Zone)
+    tz = EXCHANGE_TZ["NYSE"]  # Default is NYSE (Eastern Time Zone)
     if isinstance(exchange, str):
         exchange = exchange.upper()
         tz = EXCHANGE_TZ[exchange]
@@ -75,14 +98,14 @@ def get_time(exchange: str = "NYSE", full:bool = True, to_string:bool = False) -
     return s if to_string else print(s)
 
 
-def total_time(df: DataFrame, tf: str = "years") -> float:
+def total_time(df: DataFrame, tf: str = "years") -> Float:
     """Calculates the total time of a DataFrame. Difference of the Last and
     First index. Options: 'months', 'weeks', 'days', 'hours', 'minutes'
     and 'seconds'. Default: 'years'.
     Useful for annualization."""
     time_diff = df.index[-1] - df.index[0]
     TimeFrame = {
-        "years": time_diff.days / RATE["TRADING_DAYS_PER_YEAR"],
+        "years": time_diff.days / 365.242199074074074,  # PR 602
         "months": time_diff.days / 30.417,
         "weeks": time_diff.days / 7,
         "days": time_diff.days,
@@ -97,8 +120,8 @@ def total_time(df: DataFrame, tf: str = "years") -> float:
 
 
 def to_utc(df: DataFrame) -> DataFrame:
-    """Either localizes the DataFrame Index to UTC or it applies
-    tz_convert to set the Index to UTC.
+    """Either localizes the DataFrame Index to UTC or it applies tz_convert to
+    set the Index to UTC.
     """
     if not df.empty:
         try:
@@ -106,6 +129,21 @@ def to_utc(df: DataFrame) -> DataFrame:
         except TypeError:
             df.index = df.index.tz_convert("UTC")
     return df
+
+
+def unix_convert(s: int | Series) -> datetime | str:
+    """unix_convert
+
+    Convert timestamps from Polygon to readable datetime strings.
+
+    Parameters:
+        s (int | Series): The timestamp(s). An integer posix timestamp
+            or a Series of timestamps.
+
+    Returns:
+        (datetime | str): Converted datetime
+    """
+    return to_datetime(s, unit="ms")
 
 
 # Aliases

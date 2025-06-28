@@ -1,78 +1,94 @@
 # -*- coding: utf-8 -*-
-from numpy import nan as npNaN
-from pandas import concat
-from pandas_ta import Imports
-from pandas_ta.utils import get_drift, get_offset, non_zero_range, verify_series
+from numpy import isnan, nan
+from pandas import concat, Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    non_zero_range,
+    v_bool,
+    v_drift,
+    v_offset,
+    v_series,
+    v_talib
+)
 
 
-def true_range(high, low, close, talib=None, drift=None, offset=None, **kwargs):
-    """Indicator: True Range"""
-    # Validate arguments
-    high = verify_series(high)
-    low = verify_series(low)
-    close = verify_series(close)
-    drift = get_drift(drift)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    # Calculate Result
+def true_range(
+    high: Series, low: Series, close: Series,
+    talib: bool = None, prenan: bool = None, drift: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """True Range
+
+    This indicator attempts to quantify a High-Low range including potential
+    gap scenarios.
+
+    Sources:
+        * [macroption](https://www.macroption.com/true-range/)
+
+    Parameters:
+        high (Series): ```high``` Series
+        low (Series): ```low``` Series
+        close (Series): ```close``` Series
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        prenan (bool): Sets initial values to ```nan``` based
+            on ```drift```. Default: ```False```
+        drift (int): Difference amount. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+
+    Warning:
+        TA-Lib Correlation: ```np.float64(0.9999999999999999)```
+
+    Tip:
+        Corrective contributions welcome!
+    """
+    # Validate
+    _length = 1
+    high = v_series(high, _length)
+    low = v_series(low, _length)
+    close = v_series(close, _length)
+
+    if high is None or low is None or close is None:
+        return
+
+    mode_tal = v_talib(talib)
+    prenan = v_bool(prenan, False)
+    drift = v_drift(drift)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import TRANGE
         true_range = TRANGE(high, low, close)
     else:
-        high_low_range = non_zero_range(high, low)
-        prev_close = close.shift(drift)
-        ranges = [high_low_range, high - prev_close, prev_close - low]
+        hl_range = non_zero_range(high, low)
+        pc = close.shift(drift)
+        ranges = [hl_range, high - pc, pc - low]
         true_range = concat(ranges, axis=1)
         true_range = true_range.abs().max(axis=1)
-        true_range.iloc[:drift] = npNaN
+        if prenan:
+            true_range.iloc[:drift] = nan
+
+    if all(isnan(true_range)):
+        return  # Emergency Break
 
     # Offset
     if offset != 0:
         true_range = true_range.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         true_range.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        true_range.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     true_range.name = f"TRUERANGE_{drift}"
     true_range.category = "volatility"
 
     return true_range
-
-
-true_range.__doc__ = \
-"""True Range
-
-An method to expand a classical range (high minus low) to include
-possible gap scenarios.
-
-Sources:
-    https://www.macroption.com/true-range/
-
-Calculation:
-    Default Inputs:
-        drift=1
-    ABS = Absolute Value
-    prev_close = close.shift(drift)
-    TRUE_RANGE = ABS([high - low, high - prev_close, low - prev_close])
-
-Args:
-    high (pd.Series): Series of 'high's
-    low (pd.Series): Series of 'low's
-    close (pd.Series): Series of 'close's
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    drift (int): The shift period. Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature
-"""

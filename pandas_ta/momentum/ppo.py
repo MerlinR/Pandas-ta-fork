@@ -1,37 +1,79 @@
 # -*- coding: utf-8 -*-
-from pandas import DataFrame
-from pandas_ta import Imports
-from pandas_ta.overlap import ma
-from pandas_ta.utils import get_offset, tal_ma, verify_series
+from numpy import isnan
+from pandas import DataFrame, Series
+from pandas_ta._typing import DictLike, Int, IntFloat
+from pandas_ta.ma import ma
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    tal_ma,
+    v_mamode,
+    v_offset,
+    v_pos_default,
+    v_scalar,
+    v_series,
+    v_talib
+)
 
 
-def ppo(close, fast=None, slow=None, signal=None, scalar=None, mamode=None, talib=None, offset=None, **kwargs):
-    """Indicator: Percentage Price Oscillator (PPO)"""
-    # Validate Arguments
-    fast = int(fast) if fast and fast > 0 else 12
-    slow = int(slow) if slow and slow > 0 else 26
-    signal = int(signal) if signal and signal > 0 else 9
-    scalar = float(scalar) if scalar else 100
-    mamode = mamode if isinstance(mamode, str) else "sma"
+
+def ppo(
+    close: Series, fast: Int = None, slow: Int = None, signal: Int = None,
+    scalar: IntFloat = None, mamode: str = None, talib: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> DataFrame:
+    """Percentage Price Oscillator
+
+    Similar to MACD.
+
+    Sources:
+        * [investopedia](https://www.investopedia.com/terms/p/ppo.asp)
+
+    Parameters:
+        close (Series): ```close``` Series
+        fast (int): Fast MA period. Default: ```12```
+        slow (int): Slow MA period. Default: ```26```
+        signal (int): Signal period. Default: ```9```
+        scalar (float): Scalar. Default: ```100```
+        mamode (str): See ```help(ta.ma)```. Default: ```"sma"```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (DataFrame): 3 columns
+    """
+    # Validate
+    fast = v_pos_default(fast, 12)
+    slow = v_pos_default(slow, 26)
+    signal = v_pos_default(signal, 9)
     if slow < fast:
         fast, slow = slow, fast
-    close = verify_series(close, max(fast, slow, signal))
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
+    _length = max(fast, slow, signal)
+    close = v_series(close, _length)
 
-    if close is None: return
+    if close is None:
+        return
 
-    # Calculate Result
+    scalar = v_scalar(scalar, 100)
+    mamode = v_mamode(mamode, "sma")
+    mode_tal = v_talib(talib)
+    offset = v_offset(offset)
+
+    # Calculate
     if Imports["talib"] and mode_tal:
         from talib import PPO
         ppo = PPO(close, fast, slow, tal_ma(mamode))
     else:
-        fastma = ma(mamode, close, length=fast)
-        slowma = ma(mamode, close, length=slow)
-        ppo = scalar * (fastma - slowma)
-        ppo /= slowma
+        fastma = ma(mamode, close, length=fast, talib=mode_tal)
+        slowma = ma(mamode, close, length=slow, talib=mode_tal)
+        ppo = scalar * (fastma - slowma) / slowma
 
-    signalma = ma("ema", ppo, length=signal)
+    if all(isnan(ppo)):
+        return  # Emergency Break
+
+    signalma = ma("ema", ppo, length=signal, talib=mode_tal)
     histogram = ppo - signalma
 
     # Offset
@@ -40,66 +82,26 @@ def ppo(close, fast=None, slow=None, signal=None, scalar=None, mamode=None, tali
         histogram = histogram.shift(offset)
         signalma = signalma.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         ppo.fillna(kwargs["fillna"], inplace=True)
         histogram.fillna(kwargs["fillna"], inplace=True)
         signalma.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        ppo.fillna(method=kwargs["fill_method"], inplace=True)
-        histogram.fillna(method=kwargs["fill_method"], inplace=True)
-        signalma.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     _props = f"_{fast}_{slow}_{signal}"
     ppo.name = f"PPO{_props}"
     histogram.name = f"PPOh{_props}"
     signalma.name = f"PPOs{_props}"
     ppo.category = histogram.category = signalma.category = "momentum"
 
-    # Prepare DataFrame to return
-    data = {ppo.name: ppo, histogram.name: histogram, signalma.name: signalma}
-    df = DataFrame(data)
+    data = {
+        ppo.name: ppo,
+        histogram.name: histogram,
+        signalma.name: signalma
+    }
+    df = DataFrame(data, index=close.index)
     df.name = f"PPO{_props}"
     df.category = ppo.category
 
     return df
-
-
-ppo.__doc__ = \
-"""Percentage Price Oscillator (PPO)
-
-The Percentage Price Oscillator is similar to MACD in measuring momentum.
-
-Sources:
-    https://www.tradingview.com/wiki/MACD_(Moving_Average_Convergence/Divergence)
-
-Calculation:
-    Default Inputs:
-        fast=12, slow=26
-    SMA = Simple Moving Average
-    EMA = Exponential Moving Average
-    fast_sma = SMA(close, fast)
-    slow_sma = SMA(close, slow)
-    PPO = 100 * (fast_sma - slow_sma) / slow_sma
-    Signal = EMA(PPO, signal)
-    Histogram = PPO - Signal
-
-Args:
-    close(pandas.Series): Series of 'close's
-    fast(int): The short period. Default: 12
-    slow(int): The long period. Default: 26
-    signal(int): The signal period. Default: 9
-    scalar (float): How much to magnify. Default: 100
-    mamode (str): See ```help(ta.ma)```. Default: 'sma'
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset(int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.DataFrame: ppo, histogram, signal columns
-"""

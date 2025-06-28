@@ -1,47 +1,43 @@
-from .config import sample_data
-from .context import pandas_ta
-
-from unittest import TestCase
-from pandas import Series
+# -*- coding: utf-8 -*-
+import pandas_ta as ta
 
 
-class TestPerformace(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.data = sample_data
-        cls.close = cls.data["close"]
-        cls.islong = (cls.close > pandas_ta.sma(cls.close, length=8)).astype(int)
-        cls.pctret = pandas_ta.percent_return(cls.close, cumulative=False)
-        cls.logret = pandas_ta.percent_return(cls.close, cumulative=False)
+
+# TA Lib style Tests
+def test_drawdown(df):
+    result = ta.drawdown(df.close)
+    assert result.name == "DD"
 
 
-    @classmethod
-    def tearDownClass(cls):
-        del cls.data
-        del cls.close
-        del cls.islong
-        del cls.pctret
-        del cls.logret
+def test_log_return(df):
+    result = ta.log_return(df.close)
+    assert result.name == "LOGRET_1"
 
-    def setUp(self): pass
-    def tearDown(self): pass
+    result = ta.log_return(df.close, cumulative=True)
+    assert result.name == "CUMLOGRET_1"
 
 
-    def test_log_return(self):
-        result = pandas_ta.log_return(self.close)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "LOGRET_1")
+def test_percent_return(df):
+    result = ta.percent_return(df.close, cumulative=False)
+    assert result.name == "PCTRET_1"
 
-    def test_cum_log_return(self):
-        result = pandas_ta.log_return(self.close, cumulative=True)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "CUMLOGRET_1")
+    result = ta.percent_return(df.close, cumulative=True)
+    assert result.name == "CUMPCTRET_1"
 
-    def test_percent_return(self):
-        result = pandas_ta.percent_return(self.close, cumulative=False)
-        self.assertIsInstance(result, Series)
-        self.assertEqual(result.name, "PCTRET_1")
 
-    def test_cum_percent_return(self):
-        result = pandas_ta.percent_return(self.close, cumulative=True)
-        self.assertEqual(result.name, "CUMPCTRET_1")
+
+# DataFrame Extension Tests
+def test_ext_log_return(df):
+    df.ta.log_return(append=True)
+    assert df.columns[-1] == "LOGRET_1"
+
+    df.ta.log_return(cumulative=True, append=True)
+    assert df.columns[-1] == "CUMLOGRET_1"
+
+
+def test_ext_percent_return(df):
+    df.ta.percent_return(append=True)
+    assert df.columns[-1] == "PCTRET_1"
+
+    df.ta.percent_return(cumulative=True, append=True)
+    assert df.columns[-1] == "CUMPCTRET_1"

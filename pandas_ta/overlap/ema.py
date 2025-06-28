@@ -1,30 +1,68 @@
 # -*- coding: utf-8 -*-
-from numpy import nan as npNaN
-from pandas_ta import Imports
-from pandas_ta.utils import get_offset, verify_series
+from numpy import nan
+from numba import njit
+from pandas import Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.maps import Imports
+from pandas_ta.utils import (
+    v_bool,
+    v_offset,
+    v_pos_default,
+    v_series,
+    v_talib
+)
 
 
-def ema(close, length=None, talib=None, offset=None, **kwargs):
-    """Indicator: Exponential Moving Average (EMA)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 10
-    adjust = kwargs.pop("adjust", False)
-    sma = kwargs.pop("sma", True)
-    close = verify_series(close, length)
-    offset = get_offset(offset)
-    mode_tal = bool(talib) if isinstance(talib, bool) else True
 
-    if close is None: return
+def ema(
+    close: Series, length: Int = None,
+    talib: bool = None, presma: bool = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Exponential Moving Average
 
-    # Calculate Result
-    if Imports["talib"] and mode_tal:
+    This Moving Average is more responsive than the Simple Moving
+    Average (SMA).
+
+    Sources:
+        * [investopedia](https://www.investopedia.com/ask/answers/122314/what-exponential-moving-average-ema-formula-and-how-ema-calculated.asp)
+        * [stockcharts](https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:moving_averages)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```10```
+        talib (bool): If installed, use TA Lib. Default: ```True```
+        presma (bool): Initialize with SMA like TA Lib. Default: ```True```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        adjust (bool): Default: ```False```
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 10)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    mode_tal = v_talib(talib)
+    presma = v_bool(presma, True)
+    offset = v_offset(offset)
+    adjust = kwargs.setdefault("adjust", False)
+
+    # Calculate
+    if Imports["talib"] and mode_tal and length > 1:
         from talib import EMA
         ema = EMA(close, length)
     else:
-        if sma:
+        if presma:  # TA Lib implementation
             close = close.copy()
-            sma_nth = close[0:length].mean()
-            close[:length - 1] = npNaN
+            sma_nth = close.iloc[0:length].mean()
+            close.iloc[:length - 1] = nan
             close.iloc[length - 1] = sma_nth
         ema = close.ewm(span=length, adjust=adjust).mean()
 
@@ -32,54 +70,12 @@ def ema(close, length=None, talib=None, offset=None, **kwargs):
     if offset != 0:
         ema = ema.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         ema.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        ema.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name & Category
+    # Name and Category
     ema.name = f"EMA_{length}"
     ema.category = "overlap"
 
     return ema
-
-
-ema.__doc__ = \
-"""Exponential Moving Average (EMA)
-
-The Exponential Moving Average is more responsive moving average compared to the
-Simple Moving Average (SMA).  The weights are determined by alpha which is
-proportional to it's length.  There are several different methods of calculating
-EMA.  One method uses just the standard definition of EMA and another uses the
-SMA to generate the initial value for the rest of the calculation.
-
-Sources:
-    https://stockcharts.com/school/doku.php?id=chart_school:technical_indicators:moving_averages
-    https://www.investopedia.com/ask/answers/122314/what-exponential-moving-average-ema-formula-and-how-ema-calculated.asp
-
-Calculation:
-    Default Inputs:
-        length=10, adjust=False, sma=True
-    if sma:
-        sma_nth = close[0:length].sum() / length
-        close[:length - 1] = np.NaN
-        close.iloc[length - 1] = sma_nth
-    EMA = close.ewm(span=length, adjust=adjust).mean()
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 10
-    talib (bool): If TA Lib is installed and talib is True, Returns the TA Lib
-        version. Default: True
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    adjust (bool, optional): Default: False
-    sma (bool, optional): If True, uses SMA for initial value. Default: True
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

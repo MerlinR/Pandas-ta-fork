@@ -1,25 +1,62 @@
 # -*- coding: utf-8 -*-
-from pandas import DataFrame
+from pandas import DataFrame, Series
+from pandas_ta._typing import DictLike, Int
+from pandas_ta.ma import ma
+from pandas_ta.utils import v_mamode, v_offset, v_pos_default, v_series
 from .long_run import long_run
 from .short_run import short_run
-from pandas_ta.overlap import ma
-from pandas_ta.utils import get_offset, verify_series
 
 
-def amat(close=None, fast=None, slow=None, lookback=None, mamode=None, offset=None, **kwargs):
-    """Indicator: Archer Moving Averages Trends (AMAT)"""
-    # Validate Arguments
-    fast = int(fast) if fast and fast > 0 else 8
-    slow = int(slow) if slow and slow > 0 else 21
-    lookback = int(lookback) if lookback and lookback > 0 else 2
-    mamode = mamode.lower() if isinstance(mamode, str) else "ema"
-    close = verify_series(close, max(fast, slow, lookback))
-    offset = get_offset(offset)
-    if "length" in kwargs: kwargs.pop("length")
 
-    if close is None: return
+def amat(
+    close: Series, fast: Int = None, slow: Int = None,
+    lookback: Int = None, mamode: str = None,
+    offset: Int = None, **kwargs: DictLike
+) -> DataFrame:
+    """Archer Moving Averages Trends
 
-    # # Calculate Result
+    This indicator, by Kevin Johnson, attempts to identify both long run
+    and short run trends.
+
+    Sources:
+        * Kevin Johnson
+        * [tradingview](https://www.tradingview.com/script/Z2mq63fE-Trade-Archer-Moving-Averages-v1-4F/)
+
+    Parameters:
+        close (Series): ```close``` Series
+        fast (int): Fast MA period. Default: ```8```
+        slow (int): Slow MA period. Default: ```21```
+        lookback (int): Lookback period for ```long_run``` and ```short_run```.
+            Default: ```2```
+        mamode (str): See ```help(ta.ma)```. Default: ```"ema"```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        run_length (int): OBV trend period. Default: ```2```
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (DataFrame): 2 columns
+
+    Note:
+        Both the long run and short run values are integers, where ```1```
+        is a trend and ```0``` is not a trend.
+    """
+    # Validate
+    fast = v_pos_default(fast, 8)
+    slow = v_pos_default(slow, 21)
+    lookback = v_pos_default(lookback, 2)
+    close = v_series(close, max(fast, slow, lookback))
+
+    if close is None:
+        return
+
+    mamode = v_mamode(mamode, "ema")
+    offset = v_offset(offset)
+    if "length" in kwargs:
+        kwargs.pop("length")
+
+    # Calculate
     fast_ma = ma(mamode, close, length=fast, **kwargs)
     slow_ma = ma(mamode, close, length=slow, **kwargs)
 
@@ -31,23 +68,20 @@ def amat(close=None, fast=None, slow=None, lookback=None, mamode=None, offset=No
         mas_long = mas_long.shift(offset)
         mas_short = mas_short.shift(offset)
 
-    # # Handle fills
+    # Fill
     if "fillna" in kwargs:
         mas_long.fillna(kwargs["fillna"], inplace=True)
         mas_short.fillna(kwargs["fillna"], inplace=True)
 
-    if "fill_method" in kwargs:
-        mas_long.fillna(method=kwargs["fill_method"], inplace=True)
-        mas_short.fillna(method=kwargs["fill_method"], inplace=True)
+    _props = f"_{fast}_{slow}_{lookback}"
+    data = {
+        f"AMAT{mamode[0]}_LR{_props}": mas_long,
+        f"AMAT{mamode[0]}_SR{_props}": mas_short
+    }
+    df = DataFrame(data, index=close.index)
 
-    # Prepare DataFrame to return
-    amatdf = DataFrame({
-        f"AMAT{mamode[0]}_LR_{fast}_{slow}_{lookback}": mas_long,
-        f"AMAT{mamode[0]}_SR_{fast}_{slow}_{lookback}": mas_short
-    })
+    # Name and Category
+    df.name = f"AMAT{mamode[0]}{_props}"
+    df.category = "trend"
 
-    # Name and Categorize it
-    amatdf.name = f"AMAT{mamode[0]}_{fast}_{slow}_{lookback}"
-    amatdf.category = "trend"
-
-    return amatdf
+    return df

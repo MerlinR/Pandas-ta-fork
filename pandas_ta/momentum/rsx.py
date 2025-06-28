@@ -1,20 +1,56 @@
 # -*- coding: utf-8 -*-
-from numpy import nan as npNaN
+from numpy import nan
+from pandas_ta._typing import DictLike, Int
 from pandas import concat, DataFrame, Series
-from pandas_ta.utils import get_drift, get_offset, verify_series, signals
+from pandas_ta.utils import (
+    signals,
+    v_drift,
+    v_offset,
+    v_pos_default,
+    v_series
+)
+from shutil import which
 
 
-def rsx(close, length=None, drift=None, offset=None, **kwargs):
-    """Indicator: Relative Strength Xtra (inspired by Jurik RSX)"""
-    # Validate arguments
-    length = int(length) if length and length > 0 else 14
-    close = verify_series(close, length)
-    drift = get_drift(drift)
-    offset = get_offset(offset)
 
-    if close is None: return
+def rsx(
+    close: Series, length: Int = None, drift: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Relative Strength Xtra
 
-    # variables
+    This indicator, by Jurik Research, is an enhanced version of the RSI which
+    attemps to reduce noise and provide a clearer, though slightly
+    delayed, signal.
+
+    Sources:
+        * [jurikres](http://www.jurikres.com/catalog1/ms_rsx.htm)
+        * [prorealcode](https://www.prorealcode.com/prorealtime-indicators/jurik-rsx/)
+
+    Parameters:
+        close (Series): ```close``` Series
+        length (int): The period. Default: ```14```
+        drift (int): Difference amount. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 14)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    drift = v_drift(drift)
+    offset = v_offset(offset)
+
+    # Calculate
+    m = close.size
     vC, v1C = 0, 0
     v4, v8, v10, v14, v18, v20 = 0, 0, 0, 0, 0, 0
 
@@ -22,9 +58,7 @@ def rsx(close, length=None, drift=None, offset=None, **kwargs):
     f40, f48, f50, f58, f60, f68, f70, f78 = 0, 0, 0, 0, 0, 0, 0, 0
     f80, f88, f90 = 0, 0, 0
 
-    # Calculate Result
-    m = close.size
-    result = [npNaN for _ in range(0, length - 1)] + [0]
+    result = [nan for _ in range(0, length - 1)] + [50]
     for i in range(length, m):
         if f90 == 0:
             f90 = 1.0
@@ -33,7 +67,7 @@ def rsx(close, length=None, drift=None, offset=None, **kwargs):
                 f88 = length - 1.0
             else:
                 f88 = 5.0
-            f8 = 100.0 * close.iloc[i]
+            f8 = 100.0 * close.iat[i]
             f18 = 3.0 / (length + 2.0)
             f20 = 1.0 - f18
         else:
@@ -42,7 +76,7 @@ def rsx(close, length=None, drift=None, offset=None, **kwargs):
             else:
                 f90 = f90 + 1
             f10 = f8
-            f8 = 100 * close.iloc[i]
+            f8 = 100 * close.iat[i]
             v8 = f8 - f10
             f28 = f20 * f28 + f18 * v8
             f30 = f18 * f28 + f20 * f30
@@ -83,18 +117,18 @@ def rsx(close, length=None, drift=None, offset=None, **kwargs):
     if offset != 0:
         rsx = rsx.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         rsx.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        rsx.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     rsx.name = f"RSX_{length}"
     rsx.category = "momentum"
 
     signal_indicators = kwargs.pop("signal_indicators", False)
-    if signal_indicators:
+    if not signal_indicators:
+        return rsx
+    else:
         signalsdf = concat(
             [
                 DataFrame({rsx.name: rsx}),
@@ -102,9 +136,9 @@ def rsx(close, length=None, drift=None, offset=None, **kwargs):
                     indicator=rsx,
                     xa=kwargs.pop("xa", 80),
                     xb=kwargs.pop("xb", 20),
-                    xserie=kwargs.pop("xserie", None),
-                    xserie_a=kwargs.pop("xserie_a", None),
-                    xserie_b=kwargs.pop("xserie_b", None),
+                    xseries=kwargs.pop("xseries", None),
+                    xseries_a=kwargs.pop("xseries_a", None),
+                    xseries_b=kwargs.pop("xseries_b", None),
                     cross_values=kwargs.pop("cross_values", False),
                     cross_series=kwargs.pop("cross_series", True),
                     offset=offset,
@@ -112,38 +146,4 @@ def rsx(close, length=None, drift=None, offset=None, **kwargs):
             ],
             axis=1
         )
-
         return signalsdf
-    else:
-        return rsx
-
-
-rsx.__doc__ = \
-"""Relative Strength Xtra (rsx)
-
-The Relative Strength Xtra is based on the popular RSI indicator and inspired
-by the work Jurik Research. The code implemented is based on published code
-found at 'prorealcode.com'. This enhanced version of the rsi reduces noise and
-provides a clearer, only slightly delayed insight on momentum and velocity of
-price movements.
-
-Sources:
-    http://www.jurikres.com/catalog1/ms_rsx.htm
-    https://www.prorealcode.com/prorealtime-indicators/jurik-rsx/
-
-Calculation:
-    Refer to the sources above for information as well as code example.
-
-Args:
-    close (pd.Series): Series of 'close's
-    length (int): It's period. Default: 14
-    drift (int): The difference period. Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""

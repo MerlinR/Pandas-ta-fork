@@ -1,87 +1,80 @@
 # -*- coding: utf-8 -*-
-from numpy import sign as npSign
-from pandas_ta.utils import get_drift, get_offset, verify_series
+from numpy import sign
+from pandas import Series
+from pandas_ta._typing import DictLike, Int, IntFloat
+from pandas_ta.utils import (
+    nb_idiff,
+    v_drift,
+    v_offset,
+    v_pos_default,
+    v_scalar,
+    v_series
+)
 
 
-def psl(close, open_=None, length=None, scalar=None, drift=None, offset=None, **kwargs):
-    """Indicator: Psychological Line (PSL)"""
-    # Validate Arguments
-    length = int(length) if length and length > 0 else 12
-    scalar = float(scalar) if scalar and scalar > 0 else 100
-    close = verify_series(close, length)
-    drift = get_drift(drift)
-    offset = get_offset(offset)
 
-    if close is None: return
+def psl(
+    close: Series, open_: Series = None,
+    length: Int = None, scalar: IntFloat = None, drift: Int = None,
+    offset: Int = None, **kwargs: DictLike
+) -> Series:
+    """Psychological Line
 
-    # Calculate Result
+    This indicator compares the number of the rising bars to the total number
+    of bars. In other words, it is the percentage of bars that are above the
+    previous bar over a given length.
+
+    Sources:
+        * [quantshare](https://www.quantshare.com/item-851-psychological-line)
+
+    Parameters:
+        close (Series): ```close``` Series
+        open_ (Series): ```open``` Series
+        length (int): The period. Default: ```12```
+        scalar (float): Scalar. Default: ```100```
+        drift (int): Difference amount. Default: ```1```
+        offset (int): Post shift. Default: ```0```
+
+    Other Parameters:
+        fillna (value): ```pd.DataFrame.fillna(value)```
+
+    Returns:
+        (Series): 1 column
+    """
+    # Validate
+    length = v_pos_default(length, 12)
+    close = v_series(close, length)
+
+    if close is None:
+        return
+
+    scalar = v_scalar(scalar, 100)
+    drift = v_drift(drift)
+    offset = v_offset(offset)
+
+    # Calculate
     if open_ is not None:
-        open_ = verify_series(open_)
-        diff = npSign(close - open_)
+        open_ = v_series(open_)
+        diff = sign(close - open_)
     else:
-        diff = npSign(close.diff(drift))
+        diff = sign(close.diff(drift))
 
     diff.fillna(0, inplace=True)
-    diff[diff <= 0] = 0  # Zero negative values
+    diff[diff <= 0] = 0  # Set negative values to zero
 
-    psl = scalar * diff.rolling(length).sum()
-    psl /= length
+    psl = scalar * diff.rolling(length).sum() / length
 
     # Offset
     if offset != 0:
         psl = psl.shift(offset)
 
-    # Handle fills
+    # Fill
     if "fillna" in kwargs:
         psl.fillna(kwargs["fillna"], inplace=True)
-    if "fill_method" in kwargs:
-        psl.fillna(method=kwargs["fill_method"], inplace=True)
 
-    # Name and Categorize it
+    # Name and Category
     _props = f"_{length}"
     psl.name = f"PSL{_props}"
     psl.category = "momentum"
 
     return psl
-
-
-psl.__doc__ = \
-"""Psychological Line (PSL)
-
-The Psychological Line is an oscillator-type indicator that compares the
-number of the rising periods to the total number of periods. In other
-words, it is the percentage of bars that close above the previous
-bar over a given period.
-
-Sources:
-    https://www.quantshare.com/item-851-psychological-line
-
-Calculation:
-    Default Inputs:
-        length=12, scalar=100, drift=1
-
-    IF NOT open:
-        DIFF = SIGN(close - close[drift])
-    ELSE:
-        DIFF = SIGN(close - open)
-
-    DIFF.fillna(0)
-    DIFF[DIFF <= 0] = 0
-
-    PSL = scalar * SUM(DIFF, length) / length
-
-Args:
-    close (pd.Series): Series of 'close's
-    open_ (pd.Series, optional): Series of 'open's
-    length (int): It's period. Default: 12
-    scalar (float): How much to magnify. Default: 100
-    drift (int): The difference period. Default: 1
-    offset (int): How many periods to offset the result. Default: 0
-
-Kwargs:
-    fillna (value, optional): pd.DataFrame.fillna(value)
-    fill_method (value, optional): Type of fill method
-
-Returns:
-    pd.Series: New feature generated.
-"""
